@@ -4,8 +4,9 @@
  * Expects multipart/form-data with a single "data" field: a JSON string
  * matching the shape produced by public/ads/a2p/index.html's CONFIG.steps.
  *
- * Required binding (see wrangler.toml):
- *   env.DB — D1 database binding
+ * Required bindings/vars (see wrangler.toml):
+ *   env.DB                — D1 database binding
+ *   env.SHEETS_WEBHOOK_URL — Apps Script Web App URL for the Sheets sync
  */
 
 export async function handleSubmitA2P(request, env) {
@@ -38,6 +39,37 @@ export async function handleSubmitA2P(request, env) {
       data.software_access || "", JSON.stringify(data.team_members || []),
       consent.agreed ? 1 : 0, consent.signed_at || null
     ).run();
+
+    // Best-effort push to Google Sheets — never blocks the actual submission,
+    // since D1 is the source of truth. EIN is used to match/merge a client's
+    // row across the 4 onboarding parts.
+    try {
+      const addressParts = [addr.street, addr.suite, addr.city, addr.state, addr.zip].filter(Boolean);
+      const teamMembers = (data.team_members || [])
+        .filter(m => m.name || m.email || m.phone)
+        .map(m => [m.name, m.email, m.phone].filter(Boolean).join(", "))
+        .join("; ");
+
+      await fetch(env.SHEETS_WEBHOOK_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          part: "a2p",
+          email: data.business_email,
+          name: data.respondent_legal_name,
+          title: data.respondent_title,
+          ein: data.ein,
+          legal_biz_name: data.legal_biz_name,
+          biz_address: addressParts.join(", "),
+          biz_type: data.legal_biz_entity_type,
+          mobile: data.mobile_cell_phone,
+          crm: data.software_access,
+          additional_team: teamMembers
+        })
+      });
+    } catch (sheetsErr) {
+      console.error("Sheets push failed (non-blocking):", sheetsErr);
+    }
 
     return json({ ok: true, id });
   } catch (err) {
