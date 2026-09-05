@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ads Onboarding — Part 1: A2P &amp; SMS Compliance</title>
+
+<!--
+  Ads plan, Part 1 of 5 — A2P / SMS Compliance.
+  This page only defines CONFIG. All rendering/logic lives in
+  /shared/onboarding-engine.js so every part of every plan behaves the
+  same way. Edit the "steps" array below to change questions.
+
+  Visual theme is a placeholder (same ink/parchment/brass/stamp system as
+  the first draft) pending the demo.letlois.com reference + logo files.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/onboarding.css">
+</head>
+<body>
+
+<div class="shell">
+  <img class="brand-mark" src="../../shared/assets/logo-icon.png" alt="LetLois">
+  <div class="card" id="card"></div>
+  <footer class="credit" id="footerCredit"></footer>
+</div>
+<span class="visually-hidden" aria-live="polite" id="liveRegion"></span>
+
+<script src="../../shared/onboarding-engine.js"></script>
+<script>
+  OnboardingForm.init({
+    businessName: "LetLois",                 // EDIT ME
+    partLabel: "Onboarding Form · Part 1",
+    apiEndpoint: "/api/submit-a2p",
+    fallbackEmail: "hello@letlois.com",       // EDIT ME
+
+    steps: [
+      { id: "welcome", type: "welcome",
+        title: "General Business Information.",
+        subtitle: "We're going to gather some basic-level business information so we can store and house this on our end when we go to set up your business texting. About 2 minutes.",
+        cta: "Start" },
+
+      { id: "business_email", type: "email", required: true,
+        question: "What's a business email we can use to reach your team?",
+        placeholder: "hello@yourcompany.com",
+        context: "Can be your info@, hello@, or any inbox your team already uses." },
+
+      { id: "respondent_legal_name", type: "text", required: true, minWords: 2,
+        question: "What is your legal name?",
+        placeholder: "Jane A. Doe",
+        context: "This is for A2P registration — it needs to match exactly what's on your EIN paperwork." },
+
+      { id: "respondent_title", type: "text", required: true,
+        question: "What's your title at the business?",
+        placeholder: "Marketing Director, Owner, etc.",
+        context: "Tracked separately from your name so it routes correctly on our end." },
+
+      { id: "ein", type: "text", required: true,
+        question: "What's your EIN (Employer Identification Number)?",
+        placeholder: "12-3456789",
+        mask: "XX-XXXXXXX",
+        context: "This number is extremely important for getting your business texting up and running — we'll use it for the TCR registration process." },
+
+      { id: "legal_biz_name", type: "text", required: true,
+        question: "What's your business's exact legal name?",
+        placeholder: "Acme Holdings LLC",
+        context: "This also has to match your EIN form exactly." },
+
+      { id: "legal_biz_address", type: "address", required: true,
+        question: "What's your registered legal business address?",
+        context: "This has to match perfectly with the CP 575 form you received in your EIN confirmation letter." },
+
+      { id: "legal_biz_entity_type", type: "select", required: true,
+        question: "What type of legal entity is the business?",
+        options: ["Cooperative", "Corporation", "Limited Liability Company / Sole Proprietorship", "Non-Profit Corporation", "Partnership"] },
+
+      { id: "mobile_cell_phone", type: "tel", required: true,
+        question: "What's the best mobile number for verification codes?",
+        placeholder: "(555) 123-4567",
+        mask: "(XXX) XXX-XXXX",
+        context: "This number has to be able to receive text messages — it's how we'll send you OTP codes." },
+
+      { id: "software_access", type: "text", required: true,
+        question: "What CRM or other software do you use to run your marketing or client list?",
+        placeholder: "e.g. HubSpot, Salesforce, Mailchimp, a spreadsheet — whatever you're using today",
+        context: "This is so our team can get access to any systems you currently use to run your marketing and/or client list, giving us full scope of what you're working with. Please add info@letlois.com as a user on anything you list here." },
+
+      { id: "team_members", type: "repeater",
+        question: "Who else is on your team that will be involved with the work we're about to do together?",
+        subtitle: "Optional — add anyone who should be looped in.",
+        addLabel: "Add another person",
+        context: "Insert the names, emails, and phone numbers of other team members so we can add them to our systems.",
+        fields: [
+          { key: "name", placeholder: "Name", type: "text", minWords: 2 },
+          { key: "email", placeholder: "Email", type: "email" },
+          { key: "phone", placeholder: "Phone", type: "tel", mask: "(XXX) XXX-XXXX" }
+        ] },
+
+      { id: "consent", type: "consent", required: true,
+        question: "One more thing.",
+        consentLabel: "I permit LetLois to automatically contact me, and acknowledge their <a href=\"https://letlois.com/terms-of-use\" target=\"_blank\" rel=\"noopener\">Terms of Use</a>, <a href=\"https://letlois.com/cookie-policy\" target=\"_blank\" rel=\"noopener\">Cookie Policy</a> and <a href=\"https://letlois.com/privacy-policy\" target=\"_blank\" rel=\"noopener\">Privacy Policy</a>." },
+
+      { id: "end", type: "end",
+        title: "Part 1 complete.",
+        subtitle: "Thanks — we've got everything we need for A2P & SMS compliance. We'll follow up with Part 2 next." }
+    ]
+  });
+</script>
+</body>
+</html>
