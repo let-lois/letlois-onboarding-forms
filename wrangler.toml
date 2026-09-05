@@ -12,4 +12,4 @@ binding = "DB"
 database_name = "letlois-onboarding"
 database_id = "d35e051e-2f19-4c83-ac58-3cc15f9c3092"
 [vars]
-SHEETS_WEBHOOK_URL = "https://script.google.com/a/macros/letlois.com/s/AKfycbwdtPEK9E5kIb6_fHQAN9IRgIa7iag-YWccdh36FhcC4TChgy2aqiUMkutNyeIshi_S/exec"
+SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbwdtPEK9E5kIb6_fHQAN9IRgIa7iag-YWccdh36FhcC4TChgy2aqiUMkutNyeIshi_S/exec"
