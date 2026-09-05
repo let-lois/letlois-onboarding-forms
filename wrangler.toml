@@ -7,11 +7,11 @@ pages_build_output_dir = "public"
 [[d1_databases]]
 binding = "DB"
 database_name = "letlois-onboarding"
-database_id = "REPLACE-WITH-YOUR-D1-DATABASE-ID"
+database_id = d35e051e-2f19-4c83-ac58-3cc15f9c3092
 
 # Non-secret config read by functions/api/submit-a2p.js
 [vars]
-GOOGLE_DRIVE_PARENT_FOLDER_ID = "REPLACE-WITH-YOUR-SHARED-DRIVE-FOLDER-ID"
+GOOGLE_DRIVE_PARENT_FOLDER_ID = d35e051e-2f19-4c83-ac58-3cc15f9c3092
 
 # GOOGLE_SERVICE_ACCOUNT_KEY_JSON is a SECRET and must NOT be put in this file.
 # Set it with:
