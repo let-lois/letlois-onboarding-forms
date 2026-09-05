@@ -1,24 +1,10 @@
 name = "letlois-onboarding"
 compatibility_date = "2026-08-27"
-pages_build_output_dir = "public"
 
-# D1 database — after running `wrangler d1 create letlois-onboarding`,
-# paste the database_id it prints below.
+[assets]
+directory = "./public"
+
 [[d1_databases]]
 binding = "DB"
 database_name = "letlois-onboarding"
-database_id = d35e051e-2f19-4c83-ac58-3cc15f9c3092
-
-# Non-secret config read by functions/api/submit-a2p.js
-[vars]
-GOOGLE_DRIVE_PARENT_FOLDER_ID = d35e051e-2f19-4c83-ac58-3cc15f9c3092
-
-# GOOGLE_SERVICE_ACCOUNT_KEY_JSON is a SECRET and must NOT be put in this file.
-# Set it with:
-#   wrangler pages secret put GOOGLE_SERVICE_ACCOUNT_KEY_JSON
-# (paste the full contents of the service account's downloaded JSON key)
-
-# Note: Wrangler's config keys shift occasionally between versions. If
-# `pages_build_output_dir` isn't recognized by your installed version, set
-# the build output directory instead via the Cloudflare dashboard
-# (Pages project → Settings → Builds).
+database_id = "d35e051e-2f19-4c83-ac58-3cc15f9c3092"
