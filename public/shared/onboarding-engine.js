@@ -13,7 +13,10 @@
    Submission contract:
      - POSTs a FormData to CONFIG.apiEndpoint
      - field "data": JSON string of all non-file answers, keyed by step id
-     - field "photos": zero or more File objects (from any "file"-type steps)
+     - each "file"-type step's uploads are sent under a field named after
+       that step's own id (e.g. a step with id "logo" sends its files
+       under the "logo" field), so multiple file fields on one form don't
+       collide with each other
      - expects JSON back: { ok: true, ... } or { ok: false, error }
      - if location.protocol is "file:", runs in DEMO MODE — no network
        call is made, so the design can be previewed by opening the HTML
@@ -564,7 +567,7 @@
           const fd = new FormData();
           fd.append("data", JSON.stringify(payload));
           fileSteps.forEach(s => {
-            (answers[s.id] || []).forEach(f => fd.append("photos", f, f.name));
+            (answers[s.id] || []).forEach(f => fd.append(s.id, f, f.name));
           });
           const res = await fetch(CONFIG.apiEndpoint, { method: "POST", body: fd });
           if (!res.ok) throw new Error("Server responded with status " + res.status);
