@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ads Onboarding — Part 3: Assets</title>
+
+<!--
+  Ads plan, Part 3 of 3 — Assets for Landing Pages & Meta Ads.
+  This page only defines CONFIG. All rendering/logic lives in
+  /shared/onboarding-engine.js so every part of every plan behaves the
+  same way. Edit the "steps" array below to change questions.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/onboarding.css">
+</head>
+<body>
+
+<div class="shell">
+  <img class="brand-mark" src="../../shared/assets/logo-icon.png" alt="LetLois">
+  <div class="card" id="card"></div>
+  <footer class="credit" id="footerCredit"></footer>
+</div>
+<span class="visually-hidden" aria-live="polite" id="liveRegion"></span>
+
+<script src="../../shared/onboarding-engine.js"></script>
+<script>
+  OnboardingForm.init({
+    businessName: "LetLois",
+    partLabel: "Onboarding Form · Part 3",
+    apiEndpoint: "/api/submit-assets",
+    fallbackEmail: "hello@letlois.com",
+
+    steps: [
+      { id: "welcome", type: "welcome",
+        title: "Your Assets.",
+        subtitle: "The photos, videos, and details we'll use to build your landing pages and ads. About 3 minutes.",
+        cta: "Start" },
+
+      { id: "business_name", type: "text", required: true,
+        question: "What's your business name?",
+        placeholder: "Acme",
+        context: "We'll use this to match your assets to the answers you already gave us in Parts 1 and 2." },
+
+      { id: "top_3_services", type: "textarea", required: true,
+        question: "What are your top 3 services?",
+        placeholder: "The ones you'd most want featured in an ad or on a landing page." },
+
+      { id: "offer_details", type: "textarea", required: true,
+        question: "What are the offer details?",
+        placeholder: "Any promotion, discount, or specific offer we should highlight." },
+
+      { id: "before_after_photos", type: "file", required: false,
+        question: "Do you have any before and after photos?",
+        subtitle: "Optional — but these tend to perform really well in ads." },
+
+      { id: "videos", type: "file", required: false,
+        question: "Any videos we can use?",
+        subtitle: "Optional — testimonials, job walkthroughs, whatever you've got." },
+
+      { id: "end", type: "end",
+        title: "Part 3 complete.",
+        subtitle: "That's everything — thanks for finishing your onboarding. We'll be in touch soon." }
+    ]
+  });
+</script>
+</body>
+</html>
