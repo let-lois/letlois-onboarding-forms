@@ -15,4 +15,8 @@ database_id = "d35e051e-2f19-4c83-ac58-3cc15f9c3092"
 [vars]
 SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbxw5tyrpX6_lysHG5-SffJcAwMVSZSXuJkbM-Hz1-nInMY0lawIyFlYlJCZK40E94hr/exec"
 GOOGLE_DRIVE_PARENT_FOLDER_ID = "0ADsUTq_SmUjEUk9PVA"
-GOOGLE_SERVICE_ACCOUNT_KEY_JSON = 'PASTE-THE-ENTIRE-CONTENTS-OF-YOUR-DOWNLOADED-JSON-KEY-FILE-HERE'
+
+# GOOGLE_SERVICE_ACCOUNT_KEY_JSON is set as an encrypted secret instead of a
+# plaintext var here — see the Cloudflare dashboard, Worker → Settings →
+# Variables and Secrets. Never put a private key in this file; this file is
+# committed to GitHub and vars here are stored in plain text.
