@@ -10,9 +10,12 @@
  *   1. Exchanges the Google service-account key (env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON)
  *      for an OAuth access token, signed with the Workers-native Web Crypto API
  *      (no Node "crypto" module needed).
- *   2. Creates a new folder for this client inside your Shared Drive
- *      (env.GOOGLE_DRIVE_PARENT_FOLDER_ID), named after their business, and
- *      uploads every photo/video into it.
+ *   2. Finds this client's folder inside your Shared Drive
+ *      (env.GOOGLE_DRIVE_PARENT_FOLDER_ID) by business name, creating it if
+ *      it doesn't exist yet, and uploads every photo/video into it. This
+ *      runs on every submission, even if no files were attached — and a
+ *      second submission from the same business reuses the same folder
+ *      rather than making a new one.
  *   3. Inserts one row into the assets_submissions D1 table (env.DB).
  *   4. Pushes a row to Google Sheets (env.SHEETS_WEBHOOK_URL), matched by
  *      business name the same way Parts 1 and 2 are.
@@ -38,16 +41,14 @@ export async function handleSubmitAssets(request, env) {
     const id = crypto.randomUUID();
     const submittedAt = new Date().toISOString();
 
-    let driveFolderUrl = null;
-
-    if (allFiles.length > 0) {
-      const accessToken = await getGoogleAccessToken(env);
-      const folderName = (data.business_name || id) + " — Assets";
-      const folder = await createDriveFolder(accessToken, env.GOOGLE_DRIVE_PARENT_FOLDER_ID, folderName);
-      driveFolderUrl = folder.webViewLink;
-      for (const file of allFiles) {
-        await uploadFileToDrive(accessToken, folder.id, file);
-      }
+    // Reuses this client's folder if one already exists (e.g. a second
+    // submission from the same business), otherwise creates it.
+    const accessToken = await getGoogleAccessToken(env);
+    const folderName = (data.business_name || id) + " — Assets";
+    const folder = await findOrCreateDriveFolder(accessToken, env.GOOGLE_DRIVE_PARENT_FOLDER_ID, folderName);
+    const driveFolderUrl = folder.webViewLink;
+    for (const file of allFiles) {
+      await uploadFileToDrive(accessToken, folder.id, file);
     }
 
     await env.DB.prepare(
@@ -154,6 +155,28 @@ function base64urlFromBuffer(buf) {
   let bin = "";
   for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
   return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+async function findOrCreateDriveFolder(accessToken, parentId, name) {
+  const escapedName = name.replace(/'/g, "\\'");
+  const query = "name = '" + escapedName + "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '" + parentId + "' in parents";
+
+  const listRes = await fetch(
+    "https://www.googleapis.com/drive/v3/files?" + new URLSearchParams({
+      q: query,
+      fields: "files(id,webViewLink)",
+      supportsAllDrives: "true",
+      includeItemsFromAllDrives: "true"
+    }),
+    { headers: { Authorization: "Bearer " + accessToken } }
+  );
+  if (!listRes.ok) throw new Error("Drive folder lookup failed: " + await listRes.text());
+  const listData = await listRes.json();
+  if (listData.files && listData.files.length > 0) {
+    return listData.files[0];
+  }
+
+  return createDriveFolder(accessToken, parentId, name);
 }
 
 async function createDriveFolder(accessToken, parentId, name) {
