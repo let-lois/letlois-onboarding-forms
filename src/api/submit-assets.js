@@ -66,9 +66,13 @@ export async function handleSubmitAssets(request, env) {
     ).run();
 
     // Best-effort push to Google Sheets — never blocks the actual submission.
-    // Matched to the client's existing row by business name.
+    // Matched to the client's existing row by business name. TEMPORARY: the
+    // actual status/response is surfaced back in sheetsDebug so we can see
+    // exactly what Google says, since Apps Script Web Apps redirect every
+    // request and silently swallowing that made this impossible to diagnose.
+    let sheetsDebug;
     try {
-      await fetch(env.SHEETS_WEBHOOK_URL, {
+      const sheetsRes = await fetch(env.SHEETS_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -80,11 +84,20 @@ export async function handleSubmitAssets(request, env) {
           videos: driveFolderUrl || ""
         })
       });
+      const bodyText = await sheetsRes.text();
+      sheetsDebug = {
+        status: sheetsRes.status,
+        ok: sheetsRes.ok,
+        redirected: sheetsRes.redirected,
+        finalUrl: sheetsRes.url,
+        bodySnippet: bodyText.slice(0, 400)
+      };
     } catch (sheetsErr) {
       console.error("Sheets push failed (non-blocking):", sheetsErr);
+      sheetsDebug = { error: String(sheetsErr && sheetsErr.message ? sheetsErr.message : sheetsErr) };
     }
 
-    return json({ ok: true, id, driveFolderUrl });
+    return json({ ok: true, id, driveFolderUrl, sheetsDebug });
   } catch (err) {
     console.error("submit-assets error:", err);
     return json({ ok: false, error: String(err && err.message ? err.message : err) }, 500);
