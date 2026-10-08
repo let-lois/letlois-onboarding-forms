@@ -1,13 +1,24 @@
 /**
  * Handles POST /api/submit-website — called from src/index.js.
  *
- * Expects multipart/form-data with a single "data" field: a JSON string
- * matching the shape produced by public/ads/website/index.html's CONFIG.steps.
+ * Expects multipart/form-data with:
+ *   - "data": JSON string of the answers from public/ads/website/index.html
+ *   - "logo": the client's logo file (optional for older form versions)
+ *
+ * The form sends structured answers (lists, colors, picked layouts). This
+ * handler turns them into short readable text so the database columns and the
+ * Google Sheet cells stay exactly as they were. The logo goes into the
+ * client's Drive folder ("<Business Name> — Assets", the same folder Part 3
+ * uses) and the file link is what gets saved.
  *
  * Required bindings/vars (see wrangler.toml):
- *   env.DB                — D1 database binding
- *   env.SHEETS_WEBHOOK_URL — Apps Script Web App URL for the Sheets sync
+ *   env.DB                               — D1 database binding
+ *   env.SHEETS_WEBHOOK_URL                — Apps Script Web App URL
+ *   env.GOOGLE_DRIVE_PARENT_FOLDER_ID     — the Shared Drive's own ID
+ *   env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON   — secret: service account JSON key
  */
+
+import { getGoogleAccessToken, findOrCreateDriveFolder, uploadFileToDrive } from "../lib/drive.js";
 
 export async function handleSubmitWebsite(request, env) {
   try {
@@ -15,6 +26,31 @@ export async function handleSubmitWebsite(request, env) {
     const dataRaw = form.get("data");
     if (!dataRaw) return json({ ok: false, error: "Missing form data" }, 400);
     const data = JSON.parse(dataRaw);
+    if (!data.business_name || !String(data.business_name).trim()) {
+      return json({ ok: false, error: "Missing business name" }, 400);
+    }
+    const businessName = String(data.business_name).trim();
+
+    // Logo: upload to the client's Drive folder. Older form versions sent a
+    // pasted link as text instead of a file, so keep that working too.
+    const logoFile = form.getAll("logo").find(f => f && typeof f === "object" && "arrayBuffer" in f && f.size > 0);
+    let logo = typeof data.logo === "string" ? data.logo : "";
+    if (logoFile) {
+      const accessToken = await getGoogleAccessToken(env);
+      const folder = await findOrCreateDriveFolder(accessToken, env.GOOGLE_DRIVE_PARENT_FOLDER_ID, businessName + " — Assets");
+      const uploaded = await uploadFileToDrive(accessToken, folder.id, logoFile, "Logo - " + (logoFile.name || "logo"));
+      logo = uploaded.webViewLink || folder.webViewLink || "";
+    }
+
+    const out = {
+      listed_services: formatServices(data.listed_services),
+      service_areas: data.service_area ? formatArea(data.service_area) : text(data.service_areas),
+      color_scheme: data.brand_colors ? formatColors(data.brand_colors) : text(data.color_scheme),
+      design_notes: data.design_template ? formatDesign(data.design_template) : text(data.design_notes),
+      pricing_details: data.wants_pricing ? formatPricing(data) : text(data.pricing_details),
+      wants_service_area_map: formatMap(data),
+      logo
+    };
 
     const id = crypto.randomUUID();
     const submittedAt = new Date().toISOString();
@@ -27,34 +63,38 @@ export async function handleSubmitWebsite(request, env) {
       ) VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?)`
     ).bind(
       id, submittedAt, "ads", "website",
-      data.business_name,
-      data.listed_services || "",
-      data.service_areas || "",
-      data.color_scheme || "",
-      data.design_notes || "",
-      data.pricing_details || "",
-      data.wants_service_area_map || "",
-      data.logo || ""
+      businessName,
+      out.listed_services,
+      out.service_areas,
+      out.color_scheme,
+      out.design_notes,
+      out.pricing_details,
+      out.wants_service_area_map,
+      out.logo
     ).run();
 
     // Best-effort push to Google Sheets — never blocks the actual submission.
     // Matched to the client's existing row by business name.
     try {
-      await fetch(env.SHEETS_WEBHOOK_URL, {
+      const sheetsRes = await fetch(env.SHEETS_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           part: "website",
-          business_name: data.business_name,
-          listed_services: data.listed_services || "",
-          service_areas: data.service_areas || "",
-          color_scheme: data.color_scheme || "",
-          design_notes: data.design_notes || "",
-          pricing_details: data.pricing_details || "",
-          wants_service_area_map: data.wants_service_area_map || "",
-          logo: data.logo || ""
+          business_name: businessName,
+          listed_services: out.listed_services,
+          service_areas: out.service_areas,
+          color_scheme: out.color_scheme,
+          design_notes: out.design_notes,
+          pricing_details: out.pricing_details,
+          wants_service_area_map: out.wants_service_area_map,
+          logo: out.logo
         })
       });
+      const sheetsBody = await sheetsRes.text();
+      if (!sheetsRes.ok || sheetsBody.indexOf('"ok":true') === -1) {
+        console.error("Sheets sync problem:", sheetsRes.status, sheetsBody.slice(0, 300));
+      }
     } catch (sheetsErr) {
       console.error("Sheets push failed (non-blocking):", sheetsErr);
     }
@@ -68,4 +108,80 @@ export async function handleSubmitWebsite(request, env) {
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
+}
+
+/* ==========================================================================
+   Turning structured answers into readable text
+   ========================================================================== */
+
+const text = v => (v == null ? "" : String(v));
+
+// "199" -> "$199", "1299" -> "$1,299", "1,200.50" -> "$1,200.50". Anything
+// else is left as typed ("Call for a quote", "$99/mo").
+function money(p) {
+  const s = text(p).trim();
+  if (!s) return "";
+  const m = s.match(/^([\d,]+)(\.\d{1,2})?$/);
+  if (!m) return s;
+  return "$" + m[1].replace(/,/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (m[2] || "");
+}
+
+function formatServices(v) {
+  if (Array.isArray(v)) return v.map(s => text(s).trim()).filter(Boolean).join("; ");
+  return text(v);
+}
+
+function formatArea(v) {
+  if (!v || typeof v !== "object") return text(v);
+  const where = v.place ? v.zip + " (" + v.place + ")" : v.zip;
+  return "Home base " + where + ", " + v.miles + " mile radius";
+}
+
+function formatColors(v) {
+  if (!v || typeof v !== "object") return text(v);
+  return [["Main", v.main], ["Secondary", v.secondary], ["Accent", v.accent]]
+    .filter(pair => pair[1])
+    .map(pair => pair[0] + " " + pair[1])
+    .join(" · ");
+}
+
+function formatDesign(v) {
+  if (!v || typeof v !== "object") return text(v);
+  if (v.skipped) return "Skipped, will send later";
+  if (v.other) return "Style: Something else, " + v.other;
+  return "Style: " + (v.label || v.choice || "");
+}
+
+function formatPricing(data) {
+  const wants = data.wants_pricing;
+  if (wants === "No") return "No pricing on the site";
+  if (wants !== "Yes") return text(wants);
+
+  const layout = data.pricing_layout;
+  if (!layout || layout.skipped) return "Yes · layout and prices to follow";
+  const name = layout.label || layout.choice;
+
+  const detailKey = { tiers: "pricing_tiers", list: "pricing_list", starting: "pricing_starting", custom: "pricing_custom" }[layout.choice];
+  const detail = detailKey ? data[detailKey] : null;
+  if (!detail || detail.skipped) return "Yes · " + name + " · prices to follow";
+
+  if (layout.choice === "custom") return "Yes · " + name + ": " + text(detail).trim();
+
+  const rows = Array.isArray(detail) ? detail : [];
+  const parts = rows.map(r => {
+    const price = money(r.price);
+    if (layout.choice === "tiers") return text(r.label).trim() + " " + price + (r.incl ? " (" + text(r.incl).trim() + ")" : "");
+    if (layout.choice === "starting") return text(r.label).trim() + " from " + price;
+    return text(r.label).trim() + " " + price;
+  });
+  return "Yes · " + name + ": " + parts.join("; ");
+}
+
+function formatMap(data) {
+  const wants = data.wants_service_area_map;
+  if (wants === "Yes") {
+    const l = data.site_map_layout;
+    return l && l.label ? "Yes · " + l.label : "Yes";
+  }
+  return text(wants);
 }
