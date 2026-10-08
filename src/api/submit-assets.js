@@ -23,7 +23,7 @@
  * Required bindings/vars (see wrangler.toml):
  *   env.DB                               — D1 database binding
  *   env.SHEETS_WEBHOOK_URL                — Apps Script Web App URL
- *   env.GOOGLE_DRIVE_PARENT_FOLDER_ID     — Shared Drive folder to create client folders in
+ *   env.GOOGLE_DRIVE_PARENT_FOLDER_ID     — the Shared Drive's own ID (client folders live at its top level)
  *   env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON   — secret: full contents of the service account JSON key
  */
 
@@ -66,11 +66,7 @@ export async function handleSubmitAssets(request, env) {
     ).run();
 
     // Best-effort push to Google Sheets — never blocks the actual submission.
-    // Matched to the client's existing row by business name. TEMPORARY: the
-    // actual status/response is surfaced back in sheetsDebug so we can see
-    // exactly what Google says, since Apps Script Web Apps redirect every
-    // request and silently swallowing that made this impossible to diagnose.
-    let sheetsDebug;
+    // Matched to the client's existing row by business name.
     try {
       const sheetsRes = await fetch(env.SHEETS_WEBHOOK_URL, {
         method: "POST",
@@ -84,20 +80,15 @@ export async function handleSubmitAssets(request, env) {
           videos: driveFolderUrl || ""
         })
       });
-      const bodyText = await sheetsRes.text();
-      sheetsDebug = {
-        status: sheetsRes.status,
-        ok: sheetsRes.ok,
-        redirected: sheetsRes.redirected,
-        finalUrl: sheetsRes.url,
-        bodySnippet: bodyText.slice(0, 400)
-      };
+      const sheetsBody = await sheetsRes.text();
+      if (!sheetsRes.ok || sheetsBody.indexOf('"ok":true') === -1) {
+        console.error("Sheets sync problem:", sheetsRes.status, sheetsBody.slice(0, 300));
+      }
     } catch (sheetsErr) {
       console.error("Sheets push failed (non-blocking):", sheetsErr);
-      sheetsDebug = { error: String(sheetsErr && sheetsErr.message ? sheetsErr.message : sheetsErr) };
     }
 
-    return json({ ok: true, id, driveFolderUrl, sheetsDebug });
+    return json({ ok: true, id, driveFolderUrl });
   } catch (err) {
     console.error("submit-assets error:", err);
     return json({ ok: false, error: String(err && err.message ? err.message : err) }, 500);
@@ -171,13 +162,19 @@ function base64urlFromBuffer(buf) {
 }
 
 async function findOrCreateDriveFolder(accessToken, parentId, name) {
-  const escapedName = name.replace(/'/g, "\\'");
+  const escapedName = name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
   const query = "name = '" + escapedName + "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '" + parentId + "' in parents";
 
+  // Tells Drive to search INSIDE the Shared Drive. Without corpora/driveId,
+  // a service account's search can come back empty even when the folder
+  // exists, which made every submission create a brand-new folder.
+  // parentId is the Shared Drive's own ID, so it doubles as the driveId.
   const listRes = await fetch(
     "https://www.googleapis.com/drive/v3/files?" + new URLSearchParams({
       q: query,
       fields: "files(id,webViewLink)",
+      corpora: "drive",
+      driveId: parentId,
       supportsAllDrives: "true",
       includeItemsFromAllDrives: "true"
     }),
