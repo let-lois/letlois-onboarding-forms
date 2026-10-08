@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ads Onboarding — Part 2: Website</title>
+
+<!--
+  Ads plan, Part 2 of 3 — Website details.
+  This page only defines CONFIG. All rendering/logic lives in
+  /shared/onboarding-engine.js so every part of every plan behaves the
+  same way. Edit the "steps" array below to change questions.
+
+  Step ids must match the keys read by src/api/submit-website.js:
+  business_name, listed_services, service_areas, color_scheme,
+  design_notes, pricing_details, wants_service_area_map, logo.
+-->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../../shared/onboarding.css">
+</head>
+<body>
+
+<div class="shell">
+  <img class="brand-mark" src="../../shared/assets/logo-icon.png" alt="LetLois">
+  <div class="card" id="card"></div>
+  <footer class="credit" id="footerCredit"></footer>
+</div>
+<span class="visually-hidden" aria-live="polite" id="liveRegion"></span>
+
+<script src="../../shared/onboarding-engine.js"></script>
+<script>
+  OnboardingForm.init({
+    businessName: "LetLois",
+    partLabel: "Onboarding Form · Part 2",
+    apiEndpoint: "/api/submit-website",
+    fallbackEmail: "hello@letlois.com",
+
+    steps: [
+      { id: "welcome", type: "welcome",
+        title: "Your Website.",
+        subtitle: "A few details about your services, your service area, and how you'd like your website to look. About 3 minutes.",
+        cta: "Start" },
+
+      { id: "business_name", type: "text", required: true,
+        question: "What's your business name?",
+        placeholder: "Acme",
+        context: "Use the same name you gave us in Part 1. It's how we match your answers together across every part of this form." },
+
+      { id: "listed_services", type: "textarea", required: true,
+        question: "What services do you want listed on your website?",
+        placeholder: "e.g. Roof repair, full roof replacement, gutter installation",
+        context: "These become the service sections and pages on your site, so list everything you want customers to see." },
+
+      { id: "service_areas", type: "textarea", required: true,
+        question: "What cities or areas do you serve?",
+        placeholder: "e.g. Dallas, Fort Worth, Arlington",
+        context: "We use this to build your location pages and to target your ads." },
+
+      { id: "color_scheme", type: "text", required: false,
+        question: "Do you have brand colors we should use?",
+        subtitle: "Optional.",
+        placeholder: "e.g. navy and orange, or hex codes like #0F2A4A",
+        context: "Colors from your logo or brand guide work best. Skip this if you're not sure." },
+
+      { id: "design_notes", type: "textarea", required: false,
+        question: "Any design preferences or websites you like?",
+        subtitle: "Optional.",
+        placeholder: "Links to sites you love, styles you want, or anything you want us to avoid." },
+
+      { id: "pricing_details", type: "textarea", required: false,
+        question: "Do you want pricing shown on your website? If so, what should it say?",
+        subtitle: "Optional.",
+        placeholder: "e.g. Free estimates, financing available, starting at $X",
+        context: "Many contractors leave exact prices off and use phrases like \"Free estimates.\" Tell us what you'd prefer." },
+
+      { id: "wants_service_area_map", type: "select", required: true,
+        question: "Do you want a map of your service area on the site?",
+        options: ["Yes", "No"],
+        context: "A map shows customers at a glance whether you cover their area." },
+
+      { id: "logo", type: "text", required: false,
+        question: "Can you share a link to your logo?",
+        subtitle: "Optional.",
+        placeholder: "Paste a Google Drive, Dropbox, or website link",
+        context: "Make sure the link is set so anyone with it can view. If you don't have one handy, you can skip this." },
+
+      { id: "end", type: "end",
+        title: "Part 2 complete.",
+        subtitle: "Thanks. We've got what we need for your website. Part 3 is next." }
+    ]
+  });
+</script>
+</body>
+</html>
