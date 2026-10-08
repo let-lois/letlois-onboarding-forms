@@ -25,14 +25,16 @@ export async function handleSubmitA2P(request, env) {
     await env.DB.prepare(
       `INSERT INTO a2p_submissions (
         id, submitted_at, plan, part,
+        business_name,
         business_email, respondent_legal_name, respondent_title, ein, legal_biz_name,
         legal_biz_street, legal_biz_suite, legal_biz_city, legal_biz_state, legal_biz_zip,
         legal_biz_entity_type, mobile_cell_phone,
         software_access, team_members,
         consent_agreed, consent_signed_at
-      ) VALUES (?,?,?,?, ?,?,?,?,?, ?,?,?,?,?, ?,?, ?,?, ?,?)`
+      ) VALUES (?,?,?,?, ?, ?,?,?,?,?, ?,?,?,?,?, ?,?, ?,?, ?,?)`
     ).bind(
       id, submittedAt, "ads", "a2p",
+      data.business_name || "",
       data.business_email, data.respondent_legal_name, data.respondent_title, data.ein, data.legal_biz_name,
       addr.street || "", addr.suite || null, addr.city || "", addr.state || "", addr.zip || "",
       data.legal_biz_entity_type, data.mobile_cell_phone,
@@ -41,8 +43,8 @@ export async function handleSubmitA2P(request, env) {
     ).run();
 
     // Best-effort push to Google Sheets — never blocks the actual submission,
-    // since D1 is the source of truth. EIN is used to match/merge a client's
-    // row across the 4 onboarding parts.
+    // since D1 is the source of truth. Business Name is used to match/merge
+    // a client's row across the 3 onboarding parts.
     try {
       const addressParts = [addr.street, addr.suite, addr.city, addr.state, addr.zip].filter(Boolean);
       const teamMembers = (data.team_members || [])
@@ -50,11 +52,12 @@ export async function handleSubmitA2P(request, env) {
         .map(m => [m.name, m.email, m.phone].filter(Boolean).join(", "))
         .join("; ");
 
-      await fetch(env.SHEETS_WEBHOOK_URL, {
+      const sheetsRes = await fetch(env.SHEETS_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           part: "a2p",
+          business_name: data.business_name || "",
           email: data.business_email,
           name: data.respondent_legal_name,
           title: data.respondent_title,
@@ -67,6 +70,10 @@ export async function handleSubmitA2P(request, env) {
           additional_team: teamMembers
         })
       });
+      const sheetsBody = await sheetsRes.text();
+      if (!sheetsRes.ok || sheetsBody.indexOf('"ok":true') === -1) {
+        console.error("Sheets sync problem:", sheetsRes.status, sheetsBody.slice(0, 300));
+      }
     } catch (sheetsErr) {
       console.error("Sheets push failed (non-blocking):", sheetsErr);
     }
