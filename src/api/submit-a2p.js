@@ -21,6 +21,7 @@ export async function handleSubmitA2P(request, env) {
 
     const addr = data.legal_biz_address || {};
     const consent = data.consent || {};
+    const software = formatSoftware(data.software_access);
 
     await env.DB.prepare(
       `INSERT INTO a2p_submissions (
@@ -38,7 +39,7 @@ export async function handleSubmitA2P(request, env) {
       data.business_email, data.respondent_legal_name, data.respondent_title, data.ein, data.legal_biz_name,
       addr.street || "", addr.suite || null, addr.city || "", addr.state || "", addr.zip || "",
       data.legal_biz_entity_type, data.mobile_cell_phone,
-      data.software_access || "", JSON.stringify(data.team_members || []),
+      software, JSON.stringify(data.team_members || []),
       consent.agreed ? 1 : 0, consent.signed_at || null
     ).run();
 
@@ -66,7 +67,7 @@ export async function handleSubmitA2P(request, env) {
           biz_address: addressParts.join(", "),
           biz_type: data.legal_biz_entity_type,
           mobile: data.mobile_cell_phone,
-          crm: data.software_access,
+          crm: software,
           additional_team: teamMembers
         })
       });
@@ -87,4 +88,18 @@ export async function handleSubmitA2P(request, env) {
 
 function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
+}
+
+// The software question sends { selected: [...], other, notes }. This turns it into one
+// readable line for the database and the Google Sheet, e.g.
+//   "Jobber, ServiceTitan · Notes: Mike (owner) manages Jobber, mike@acme.com"
+// Older versions of the form sent plain text, so a string is passed through as is.
+function formatSoftware(v) {
+  if (v == null) return "";
+  if (typeof v === "string") return v.trim();
+  const picked = (Array.isArray(v.selected) ? v.selected : []).map(x => String(x).trim()).filter(Boolean);
+  const notes = String(v.notes || "").trim();
+  const names = picked.join(", ");
+  if (names && notes) return names + " · Notes: " + notes;
+  return names || (notes ? "Notes: " + notes : "");
 }
