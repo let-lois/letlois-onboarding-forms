@@ -1,6 +1,8 @@
 import { handleSubmitA2P } from "./api/submit-a2p.js";
 import { handleSubmitWebsite } from "./api/submit-website.js";
 import { handleSubmitAssets } from "./api/submit-assets.js";
+import { handleUpload } from "./api/upload.js";
+import { handleAdminFiles } from "./api/admin-files.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -14,6 +16,12 @@ export default {
     }
     if (url.pathname === "/api/submit-assets" && request.method === "POST") {
       return handleSubmitAssets(request, env);
+    }
+    if (url.pathname.startsWith("/api/upload/")) {
+      return handleUpload(request, env, url);
+    }
+    if (url.pathname.startsWith("/admin/")) {
+      return handleAdminFiles(request, env, url);
     }
 
     return env.ASSETS.fetch(request);
