@@ -55,12 +55,6 @@
     return s;
   }
   function phoneShell() { return R(0.5, 0.5, 119, 225, 16, C.screen, C.frame) + R(46, 4, 28, 5, 2.5, C.frame); }
-  function blank(w, h, label) {
-    return Svg(w, h, label,
-      '<rect x="1" y="1" width="' + (w - 2) + '" height="' + (h - 2) + '" rx="12" fill="none" stroke="' + C.lineLt + '" stroke-width="1.5" stroke-dasharray="5 4"/>' +
-      Ln(w / 2 - 8, h / 2, w / 2 + 8, h / 2, C.lineLt, 2) + Ln(w / 2, h / 2 - 8, w / 2, h / 2 + 8, C.lineLt, 2));
-  }
-
   /* ---------- three phone designs ---------- */
   // Bold and direct: logo left, menu right, dark hero, big call button, sticky call bar
   function phoneBold() {
@@ -138,29 +132,33 @@
     return Svg(150, 96, "Four service tiles, each with a starting at price tag", out);
   }
 
-  /* ---------- map layouts ---------- */
-  function mapBlock(x, y, w, h, bx, by, rx, ry) {
+  /* ---------- map layouts (same frame, same map drawing; only the arrangement changes) ---------- */
+  function mapArt(x, y, w, h, cx, cy, r) {
     return R(x, y, w, h, 4, C.map) +
-      Ln(x + 3, y + h * 0.65, x + w - 3, y + h * 0.3, "#3A4756", 3) + Ln(x + w * 0.35, y + 3, x + w * 0.6, y + h - 3, "#3A4756", 3) +
-      '<ellipse cx="' + bx + '" cy="' + by + '" rx="' + rx + '" ry="' + ry + '" fill="' + C.acc + '" fill-opacity="0.3" stroke="' + C.acc + '" stroke-width="1.5"/>' +
-      Ci(bx, by, 3.5, C.acc);
+      Ln(x + 3, y + h * 0.7, x + w - 3, y + h * 0.32, "#3A4756", 3) + Ln(x + w * 0.3, y + 3, x + w * 0.62, y + h - 3, "#3A4756", 3) +
+      '<circle cx="' + cx + '" cy="' + cy + '" r="' + r + '" fill="' + C.acc + '" fill-opacity="0.28" stroke="' + C.acc + '" stroke-width="1.5"/>' +
+      Ci(cx, cy, 3, C.acc);
   }
+  function mapFrame() { return R(0.5, 0.5, 149, 95, 8, C.screen, C.frame); }
+  // Full-width map: one big map across the page
   function mapFull() {
-    return Svg(150, 96, "A wide map section with the service area shaded",
-      R(0.5, 0.5, 149, 95, 8, C.screen, C.frame) + R(10, 8, 50, 5, 2, C.white) + mapBlock(8, 18, 134, 58, 76, 47, 36, 19) + R(10, 82, 70, 3, 1.5, C.lineLt));
+    return Svg(150, 96, "One wide map across the page with a line of text under it",
+      mapFrame() + mapArt(8, 8, 134, 58, 75, 37, 22) + R(8, 73, 64, 4, 2, C.white) + R(8, 81, 104, 3, 1.5, C.lineLt));
   }
+  // Map and city list: map on the left, the cities you serve on the right
   function mapSplit() {
-    var out = R(0.5, 0.5, 149, 95, 8, C.screen, C.frame) + mapBlock(8, 10, 70, 76, 43, 48, 24, 26) + R(88, 14, 44, 5, 2, C.white);
-    [[28, 32], [40, 40], [52, 28], [64, 36], [76, 30]].forEach(function (row) {
-      out += Ci(92, row[0] + 1, 2.5, C.acc) + R(99, row[0] - 1, row[1], 4, 2, C.lineLt);
+    var out = mapFrame() + mapArt(8, 8, 74, 80, 45, 48, 24);
+    [[18, 34], [32, 40], [46, 30], [60, 38], [74, 32]].forEach(function (row) {
+      out += Ci(92, row[0] + 2, 2.5, C.acc) + R(99, row[0], row[1], 4, 2, C.lineLt);
     });
-    return Svg(150, 96, "A map beside a list of the cities you serve", out);
+    return Svg(150, 96, "A map on the left and a list of cities on the right", out);
   }
-  function mapCompact() {
-    return Svg(150, 96, "A small map in the contact section next to a form",
-      R(0.5, 0.5, 149, 95, 8, C.screen, C.frame) + R(10, 12, 50, 5, 2, C.white) +
-      R(10, 24, 66, 9, 3, C.field) + R(10, 37, 66, 9, 3, C.field) + R(10, 50, 66, 9, 3, C.accDk) +
-      mapBlock(88, 14, 52, 56, 114, 42, 17, 18) + R(88, 76, 40, 3, 1.5, C.lineLt));
+  // Map and contact form: contact form on the left, map on the right
+  function mapForm() {
+    return Svg(150, 96, "A contact form on the left and a map on the right",
+      mapFrame() + R(8, 12, 64, 5, 2, C.white) +
+      R(8, 24, 64, 10, 3, C.field) + R(8, 38, 64, 10, 3, C.field) + R(8, 52, 64, 10, 3, C.field) + R(8, 68, 64, 12, 4, C.accDk) +
+      mapArt(80, 8, 62, 80, 111, 48, 20));
   }
 
   OnboardingForm.init({
@@ -207,9 +205,9 @@
           { id: "secondary", label: "Secondary", required: true },
           { id: "accent", label: "Accent", required: false }
         ],
-        context: "Choose from the palette, type a color code, use the eyedropper, or click a color in your logo. We save the exact color codes, so nothing gets lost in translation." },
+        context: "Drag the color scale, pick a quick color, type a color code, or tap a color in your logo. We save the exact color codes, so nothing gets lost in translation." },
 
-      { id: "design_template", type: "cards", required: true, columns: 4,
+      { id: "design_template", type: "cards", required: true, columns: 3, shape: "phone",
         question: "Which style is closest to what you want?",
         subtitle: "A rough idea is all we need. We'll refine it together.",
         options: [
@@ -217,7 +215,7 @@
           { id: "clean", title: "Clean and trusted", desc: "Centered logo, free estimate form up top.", preview: phoneClean() },
           { id: "showcase", title: "Photo-forward", desc: "Your work first, services grid below.", preview: phoneShowcase() },
           { id: "other", other: true, title: "Something else", desc: "Tell us what you have in mind.",
-            placeholder: "Describe the style you want, or paste a link to a site you like.", preview: blank(120, 226, "Describe your own style") }
+            placeholder: "Describe the style you want, or paste a link to a site you like." }
         ],
         context: "Every design works great on phones, since that's where most of your customers will see it." },
 
@@ -225,16 +223,17 @@
         question: "Should we show pricing on your website?",
         options: ["Yes", "No"] },
 
-      { id: "pricing_layout", type: "cards", required: true, columns: 4,
+      { id: "pricing_layout", type: "cards", required: true, columns: 3,
         showIf: { id: "wants_pricing", equals: "Yes" },
         skippable: true, skipLabel: "Skip this, I'll send pricing later",
         question: "How should your pricing look?",
-        subtitle: "Pick the layout that fits best. You'll add your numbers next.",
+        subtitle: "Pick the layout that fits best.",
         options: [
           { id: "tiers", title: "Three price tiers", desc: "Good, better, best side by side.", preview: priceTiers() },
           { id: "list", title: "Simple price list", desc: "Each service with its price.", preview: priceList() },
           { id: "starting", title: "Starting-at prices", desc: "A \"from $\" price on each service.", preview: priceStarting() },
-          { id: "custom", title: "Custom", desc: "Describe your own setup.", preview: blank(150, 96, "Describe your own pricing setup") }
+          { id: "custom", other: true, title: "Custom", desc: "Describe your own setup.",
+            placeholder: "Describe how you'd like your pricing shown." }
         ] },
 
       { id: "pricing_tiers", type: "rows", required: true,
@@ -271,12 +270,6 @@
           { key: "price", label: "Starting at", placeholder: "e.g. 99", prefix: "$", width: "1fr" }
         ] },
 
-      { id: "pricing_custom", type: "textarea", required: true,
-        showIf: { id: "pricing_layout", path: "choice", equals: "custom" },
-        skippable: true, skipLabel: "Skip this, I'll send my pricing later",
-        question: "How should we show your pricing?",
-        placeholder: "Tell us what to show, like financing options, free estimates, or a price range." },
-
       { id: "wants_service_area_map", type: "select", required: true,
         question: "Do you want a map of your service area on your website?",
         options: ["Yes", "No"] },
@@ -286,9 +279,11 @@
         question: "How should the map look?",
         subtitle: "Pick the layout you like best.",
         options: [
-          { id: "full", title: "Full-width map", desc: "A big map with your service area shaded.", preview: mapFull() },
+          { id: "full", title: "Full-width map", desc: "One big map across the page.", preview: mapFull() },
           { id: "split", title: "Map and city list", desc: "A map next to the cities you serve.", preview: mapSplit() },
-          { id: "compact", title: "Small contact map", desc: "A compact map beside your contact form.", preview: mapCompact() }
+          { id: "form", title: "Map and contact form", desc: "A map beside your contact form.", preview: mapForm() },
+          { id: "custom", other: true, title: "Custom", desc: "Describe what you want.",
+            placeholder: "Describe how you'd like the map to look." }
         ] },
 
       { id: "end", type: "end",
