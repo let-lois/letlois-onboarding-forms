@@ -3,6 +3,7 @@ import { handleSubmitWebsite } from "./api/submit-website.js";
 import { handleSubmitAssets } from "./api/submit-assets.js";
 import { handleUpload } from "./api/upload.js";
 import { handleAdminFiles } from "./api/admin-files.js";
+import { handleDriveCopyBatch } from "./api/copy-to-drive.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -25,5 +26,10 @@ export default {
     }
 
     return env.ASSETS.fetch(request);
+  },
+
+  // Runs in the background: copies uploaded files from R2 into Google Drive.
+  async queue(batch, env, ctx) {
+    return handleDriveCopyBatch(batch, env);
   }
 };
