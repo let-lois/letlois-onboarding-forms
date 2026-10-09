@@ -179,11 +179,13 @@
         context: "Use the same name you gave us in Part 1. It's how we match your answers together across every part of this form." },
 
       { id: "listed_services", type: "list", required: true, minItems: 3,
-        question: "What services do you want on your website?",
+        itemDetails: true, detailsLabel: "Add details (optional)",
+        detailsPlaceholder: "Anything we should know about this service? Totally optional.",
+        question: "What are the main services you want featured on your website?",
         subtitle: "Start with your top three. You can add more below.",
         placeholders: ["First service", "Second service", "Third service"],
         placeholder: "Another service", itemLabel: "Service", addLabel: "Add another service",
-        context: "These become the service sections and pages on your site, so list everything you want customers to see." },
+        context: "These become the service sections and pages on your site. Details are optional. They help us write better copy for a service, but you can skip them." },
 
       { id: "service_area", type: "radius-map", required: true,
         question: "Where do you work?",
@@ -211,9 +213,9 @@
         question: "Which style is closest to what you want?",
         subtitle: "A rough idea is all we need. We'll refine it together.",
         options: [
-          { id: "bold", title: "Bold and direct", desc: "Big headline, call button front and center.", preview: phoneBold() },
-          { id: "clean", title: "Clean and trusted", desc: "Centered logo, free estimate form up top.", preview: phoneClean() },
-          { id: "showcase", title: "Photo-forward", desc: "Your work first, services grid below.", preview: phoneShowcase() },
+          { id: "bold", title: "Bold hero with a call to action", desc: "Main hero at the very top with a clear call to action.", preview: phoneBold() },
+          { id: "clean", title: "Testimonials and logo up top", desc: "Case studies or testimonial videos at the top, with your logo centered. A more professional-looking site.", preview: phoneClean() },
+          { id: "showcase", title: "Before and after photos up top", desc: "Before-and-after photos right where the hero is.", preview: phoneShowcase() },
           { id: "other", other: true, title: "Something else", desc: "Tell us what you have in mind.",
             placeholder: "Describe the style you want, or paste a link to a site you like." }
         ],
