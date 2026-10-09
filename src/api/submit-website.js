@@ -43,7 +43,7 @@ export async function handleSubmitWebsite(request, env) {
     }
 
     const out = {
-      listed_services: formatServices(data.listed_services),
+      listed_services: formatServices(data.listed_services, data.listed_services_details),
       service_areas: data.service_area ? formatArea(data.service_area) : text(data.service_areas),
       color_scheme: data.brand_colors ? formatColors(data.brand_colors) : text(data.color_scheme),
       design_notes: data.design_template ? formatDesign(data.design_template) : text(data.design_notes),
@@ -126,9 +126,23 @@ function money(p) {
   return "$" + m[1].replace(/,/g, "").replace(/\B(?=(\d{3})+(?!\d))/g, ",") + (m[2] || "");
 }
 
-function formatServices(v) {
-  if (Array.isArray(v)) return v.map(s => text(s).trim()).filter(Boolean).join("; ");
-  return text(v);
+// Service names first, joined with "; ". Any optional details the client added follow
+// after a blank line. (src/api/lookup-services.js reads only the part before the
+// blank line, so keep the names first.)
+//   "Roofing; Gutters; Siding
+//
+//    Details:
+//    Roofing: Mostly metal roofs, some tile"
+function formatServices(v, details) {
+  if (!Array.isArray(v)) return text(v);
+  const names = v.map(s => text(s).trim());
+  const lines = [];
+  names.forEach((name, i) => {
+    const d = Array.isArray(details) ? text(details[i]).trim() : "";
+    if (name && d) lines.push(name + ": " + d);
+  });
+  const list = names.filter(Boolean).join("; ");
+  return lines.length ? list + "\n\nDetails:\n" + lines.join("\n") : list;
 }
 
 function formatArea(v) {
@@ -145,11 +159,18 @@ function formatColors(v) {
     .join(" · ");
 }
 
+// What each style means, in words the team can act on straight from the Sheet.
+const DESIGN_STYLES = {
+  bold: "Bold and direct: main hero at the very top with a clear call to action",
+  clean: "Clean and trusted: case studies or testimonial videos at the top, logo featured in the center, more professional-looking site",
+  showcase: "Photo-forward: before-and-after photos where the hero is"
+};
+
 function formatDesign(v) {
   if (!v || typeof v !== "object") return text(v);
   if (v.skipped) return "Skipped, will send later";
   if (v.other) return "Style: Something else, " + v.other;
-  return "Style: " + (v.label || v.choice || "");
+  return "Style: " + (DESIGN_STYLES[v.choice] || v.label || v.choice || "");
 }
 
 function formatPricing(data) {
