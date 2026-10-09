@@ -78,8 +78,16 @@
   .card-opt { flex-direction: row; align-items: center; gap: 14px; height: auto; }
   .card-preview { flex: 0 0 44%; max-width: 180px; }
   .card-text { flex: 1 1 0; }
-  .cards-grid.shape-phone .card-preview { flex: 0 0 90px; max-width: 90px; }
   .card-opt-other .card-desc { display: none; }
+
+  /* the three phone designs: side by side so they can be compared at a glance */
+  .cards-grid.shape-phone { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+  .cards-grid.shape-phone .card-opt { flex-direction: column; align-items: stretch; gap: 8px; height: 100%; padding: 8px; }
+  .cards-grid.shape-phone .card-preview { flex: none; width: 100%; max-width: none; }
+  .cards-grid.shape-phone .card-text { flex: none; }
+  .cards-grid.shape-phone .card-title { font-size: 12.5px; line-height: 1.25; }
+  .cards-grid.shape-phone .card-desc { display: none; }
+  .cards-grid.shape-phone .card-wrap-other { grid-column: 1 / -1; }
 }
 
 /* ---------- skip link ---------- */
@@ -97,9 +105,9 @@
 .cap { font-size: 12px; color: var(--x-muted); margin: 0; }
 
 .color-slots { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
-.color-slot { position: relative; }
+.color-slot { position: relative; display: flex; }
 .slot-main {
-  display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; text-align: left;
+  display: flex; flex: 1; align-items: center; gap: 10px; width: 100%; padding: 10px; text-align: left;
   font: inherit; color: var(--x-text);
   background: var(--x-panel); border: 1px solid var(--x-line); border-radius: 12px; cursor: pointer;
 }
@@ -118,6 +126,22 @@
   .slot-main { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 8px; }
   .slot-swatch { width: 28px; height: 28px; }
   .slot-hex { font-size: 12px; }
+}
+
+/* ways of picking a color. Wide screens show every panel and hide the tabs.
+   Phones show one panel at a time, chosen with the tabs. */
+.method-tabs { display: none; gap: 4px; padding: 4px; background: var(--x-panel); border: 1px solid var(--x-line); border-radius: 12px; }
+.method-tab {
+  flex: 1; min-width: 0; padding: 11px 6px; border: 0; border-radius: 9px; background: transparent;
+  font: inherit; font-size: 13px; font-weight: 600; color: var(--x-muted); cursor: pointer;
+}
+.method-tab.active { background: rgba(71, 183, 232, 0.16); color: var(--x-text); box-shadow: 0 0 0 1px var(--x-accent) inset; }
+.method-tab:focus-visible { outline: 2px solid var(--x-accent); outline-offset: 2px; }
+.method-panel { display: flex; flex-direction: column; gap: 18px; }
+@media (max-width: 639px) {
+  .method-tabs { display: flex; }
+  .method-panel { display: none; }
+  .method-panel.is-active { display: flex; }
 }
 
 /* the color scale: drag in the square, slide the rainbow */
@@ -169,6 +193,12 @@
 .logo-canvas { display: block; max-width: 100%; height: auto; border: 2px solid var(--x-line-strong); border-radius: 12px; cursor: crosshair; touch-action: manipulation; }
 .logo-canvas:hover { border-color: var(--x-accent); }
 .logo-hint { margin: 0; font-size: 15px; line-height: 1.4; text-align: center; color: var(--x-text); }
+
+/* phones: a shorter color square, and the logo stands alone in its tab so it needs no divider line */
+@media (max-width: 639px) {
+  .scale-box { height: 170px; }
+  .logo-pick { padding-top: 0; border-top: 0; }
+}
 
 /* ---------- radius map ---------- */
 .radius-area { display: flex; flex-direction: column; gap: 14px; }
