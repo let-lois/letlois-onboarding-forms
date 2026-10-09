@@ -115,7 +115,6 @@
 .slot-swatch { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--x-line-strong); background: #22252B; }
 .slot-meta { display: flex; flex-direction: column; min-width: 0; }
 .slot-label { font-size: 12px; color: var(--x-muted); }
-.slot-opt { font-size: 11px; opacity: 0.8; }
 .slot-hex { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 14px; }
 .slot-clear {
   position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
@@ -123,8 +122,9 @@
 }
 @media (max-width: 520px) {
   .color-slots { gap: 8px; }
-  .slot-main { flex-direction: column; align-items: flex-start; gap: 6px; padding: 10px 8px; }
-  .slot-swatch { width: 28px; height: 28px; }
+  .slot-main { flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 9px 8px; }
+  .slot-swatch { width: 24px; height: 24px; }
+  .slot-label { font-size: 11.5px; }
   .slot-hex { font-size: 12px; }
 }
 
@@ -194,9 +194,15 @@
 .logo-canvas:hover { border-color: var(--x-accent); }
 .logo-hint { margin: 0; font-size: 15px; line-height: 1.4; text-align: center; color: var(--x-text); }
 
-/* phones: a shorter color square, and the logo stands alone in its tab so it needs no divider line */
+/* phones: a tighter colors step so it fits on one screen. Shorter color square, less space between
+   parts, the color-code label and box on one row, and the logo needs no divider line in its tab. */
 @media (max-width: 639px) {
+  .colors-area { gap: 14px; }
+  .method-panel { gap: 12px; }
   .scale-box { height: 170px; }
+  .hex-field { flex-direction: row; align-items: center; gap: 12px; }
+  .hex-field .cap { flex: none; white-space: nowrap; }
+  .hex-input { flex: 1; max-width: none; min-width: 0; }
   .logo-pick { padding-top: 0; border-top: 0; }
 }
 
