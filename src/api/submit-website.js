@@ -161,11 +161,17 @@ function formatPricing(data) {
   if (!layout || layout.skipped) return "Yes · layout and prices to follow";
   const name = layout.label || layout.choice;
 
-  const detailKey = { tiers: "pricing_tiers", list: "pricing_list", starting: "pricing_starting", custom: "pricing_custom" }[layout.choice];
+  // "Custom" is described right in the layout step. Older versions of the form
+  // asked for it in a separate step, so that is still honored.
+  if (layout.choice === "custom") {
+    const older = data.pricing_custom && !data.pricing_custom.skipped ? data.pricing_custom : "";
+    const described = text(layout.other || older).trim();
+    return described ? "Yes · " + name + ": " + described : "Yes · " + name + " · details to follow";
+  }
+
+  const detailKey = { tiers: "pricing_tiers", list: "pricing_list", starting: "pricing_starting" }[layout.choice];
   const detail = detailKey ? data[detailKey] : null;
   if (!detail || detail.skipped) return "Yes · " + name + " · prices to follow";
-
-  if (layout.choice === "custom") return "Yes · " + name + ": " + text(detail).trim();
 
   const rows = Array.isArray(detail) ? detail : [];
   const parts = rows.map(r => {
@@ -181,7 +187,9 @@ function formatMap(data) {
   const wants = data.wants_service_area_map;
   if (wants === "Yes") {
     const l = data.site_map_layout;
-    return l && l.label ? "Yes · " + l.label : "Yes";
+    if (!l || l.skipped) return "Yes";
+    if (l.other) return "Yes · " + (l.label || "Custom") + ": " + text(l.other).trim();
+    return l.label ? "Yes · " + l.label : "Yes";
   }
   return text(wants);
 }
