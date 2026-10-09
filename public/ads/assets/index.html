@@ -60,30 +60,31 @@
         context: "We'll use this to match your assets to the answers you already gave us in Parts 1 and 2." },
 
       { id: "top_3_services", type: "list", required: true, minItems: 3, maxItems: 4,
-        question: "What are the top three services you market for?",
-        subtitle: "These are the services you most want new customers for. Want a fourth? You can add one, and we'll ask you why on the next question.",
+        question: "What are the top services?",
+        subtitle: "The services you most want new customers for. Add at least three. A fourth is optional.",
+        copyFrom: { url: "/api/lookup-services", label: "Use the same services from my website form", businessFrom: "business_name" },
         placeholders: ["First service", "Second service", "Third service"],
         placeholder: "Fourth service (optional)",
         itemLabel: "Service", addLabel: "Add a fourth service (optional)",
-        context: "We build a dedicated landing page on your website for each of these services, so they become the pages that bring in your best leads. We start with three. If you'd like us to build a fourth, add it and tell us why it matters to your business." },
+        context: "Each of these gets its own landing page on your website, so they become the pages that bring in your best leads. We start with three. If you'd like a fourth, add it and we'll ask why it matters." },
 
       { id: "offer_details", type: "item-details", required: true, itemsFrom: "top_3_services",
-        question: "Tell us about the offer for each service.",
-        subtitle: "Go into detail. The more we know, the better we can write each landing page.",
-        context: "Each service gets its own landing page, so we need to know what you're offering and what you're trying to achieve with it, plus any discount or incentive you want to run.",
+        question: "Tell us about each offer.",
+        subtitle: "Short answers are fine. Every box is required.",
+        context: "Each service gets its own landing page, so we need to know what you're offering and what you want from it, plus any discount you want to run.",
         fields: [
           { key: "offer", minChars: 30, help: "A few sentences is perfect.",
-            label: "What does your {item} offer look like, and what are you trying to do with it?",
-            placeholder: "Describe what's included, who it's for, and your goal. Example: Full roof replacements for homeowners. We want more large jobs in our service area." },
-          { key: "promo", minChars: 3, help: "Required. If there's nothing right now, write \"none yet\".",
-            label: "Any discounts, promotions, or incentives you want to run on {item}?",
-            placeholder: "Example: 10% off for new customers, a free inspection, or financing available." }
+            label: "What's your {item} offer, and what's your goal?",
+            placeholder: "Example: Full roof replacements for homeowners. Goal: more large jobs." },
+          { key: "promo", minChars: 3, help: "Write \"none yet\" if there isn't one.",
+            label: "Any discount or promo for {item}?",
+            placeholder: "Example: 10% off, free inspection, or financing." }
         ],
         extraFromIndex: 3,
         extraFields: [
           { key: "why", minChars: 15,
-            label: "Why do you want a landing page for {item}?",
-            placeholder: "Tell us why this service matters to your business." }
+            label: "Why do you want a page for {item}?",
+            placeholder: "Why this service matters to your business." }
         ] },
 
       { id: "before_after_photos", type: "file", required: true, multiple: true, maxSizeMB: 100, allowLink: true,
@@ -96,11 +97,11 @@
 
       { id: "team_photos", type: "file", required: true, multiple: true, maxSizeMB: 100, allowLink: true,
         accept: "image/*,.heic,.heif",
-        question: "Upload photos of your team.",
-        subtitle: "Headshots, a crew photo, your trucks, or your shop or office all work great.",
-        dropText: "Drop your team photos here, or click to browse",
+        question: "Upload photos of your team and yourself.",
+        subtitle: "Headshots, a crew photo, your trucks, or your shop. No team? Just send photos of yourself.",
+        dropText: "Drop your photos here, or click to browse",
         linkLabel: "Lots of photos? Paste a link to a folder instead (Google Drive, Dropbox, or WeTransfer).",
-        context: "People hire people they can picture at their door. Real photos of you and your crew make your website feel local and trustworthy, and they go on your About and contact sections." },
+        context: "People hire people they can picture at their door. Real photos of you and your crew (or just you) make your website feel local and trustworthy, and they go on your About and contact sections." },
 
       { id: "videos", type: "file", required: true, multiple: true, maxSizeMB: 5120, allowLink: true,
         accept: "video/*,.mp4,.mov,.m4v,.webm,.avi",
