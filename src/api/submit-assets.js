@@ -2,30 +2,39 @@
  * Handles POST /api/submit-assets — called from src/index.js.
  *
  * Expects multipart/form-data with:
- *   - "data": JSON string matching public/ads/assets/index.html's CONFIG.steps
- *   - "before_after_photos": zero or more uploaded files
- *   - "videos": zero or more uploaded files
+ *   - "data": JSON string of the answers from public/ads/assets/index.html
+ *       business_name           text
+ *       top_3_services          list of services (the 4th is an optional extra)
+ *       offer_details           one { item, offer, promo, why? } per service
+ *       before_after_photos_link, team_photos_link, videos_link
+ *                               optional links the client pasted instead of uploading
+ *   - "before_after_photos": uploaded image files
+ *   - "team_photos":         uploaded image files
+ *   - "videos":              uploaded video files
  *
  * On each request this:
- *   1. Exchanges the Google service-account key (env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON)
- *      for an OAuth access token, signed with the Workers-native Web Crypto API
- *      (no Node "crypto" module needed).
- *   2. Finds this client's folder inside your Shared Drive
- *      (env.GOOGLE_DRIVE_PARENT_FOLDER_ID) by business name, creating it if
- *      it doesn't exist yet, and uploads every photo/video into it. This
- *      runs on every submission, even if no files were attached — and a
- *      second submission from the same business reuses the same folder
- *      rather than making a new one.
+ *   1. Gets a Google access token for the service account (see src/lib/drive.js).
+ *   2. Finds this client's folder in the Shared Drive ("<Business Name> — Assets"),
+ *      or creates it, and uploads every file into it. Files are renamed with a
+ *      prefix ("Before-After - ", "Team - ", "Video - ") so they sort and read
+ *      clearly. A second submission from the same business reuses the folder.
+ *      Any links the client pasted instead of uploading are saved in the same
+ *      folder as a small text file, so nothing lives only in the Sheet.
  *   3. Inserts one row into the assets_submissions D1 table (env.DB).
  *   4. Pushes a row to Google Sheets (env.SHEETS_WEBHOOK_URL), matched by
  *      business name the same way Parts 1 and 2 are.
  *
+ * The D1 table and the Sheet columns are unchanged. Team photos are counted
+ * with the before and after photos in photos_uploaded_count.
+ *
  * Required bindings/vars (see wrangler.toml):
  *   env.DB                               — D1 database binding
  *   env.SHEETS_WEBHOOK_URL                — Apps Script Web App URL
- *   env.GOOGLE_DRIVE_PARENT_FOLDER_ID     — the Shared Drive's own ID (client folders live at its top level)
- *   env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON   — secret: full contents of the service account JSON key
+ *   env.GOOGLE_DRIVE_PARENT_FOLDER_ID     — the Shared Drive's own ID
+ *   env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON   — secret: service account JSON key
  */
+
+import { getGoogleAccessToken, findOrCreateDriveFolder, uploadFileToDrive } from "../lib/drive.js";
 
 export async function handleSubmitAssets(request, env) {
   try {
@@ -33,23 +42,43 @@ export async function handleSubmitAssets(request, env) {
     const dataRaw = form.get("data");
     if (!dataRaw) return json({ ok: false, error: "Missing form data" }, 400);
     const data = JSON.parse(dataRaw);
+    const businessName = String(data.business_name || "").trim();
+    if (!businessName) return json({ ok: false, error: "Missing business name" }, 400);
 
-    const photos = form.getAll("before_after_photos").filter(f => typeof f === "object" && "arrayBuffer" in f);
-    const videos = form.getAll("videos").filter(f => typeof f === "object" && "arrayBuffer" in f);
-    const allFiles = [...photos, ...videos];
+    const filesOf = name => form.getAll(name).filter(f => f && typeof f === "object" && "arrayBuffer" in f && f.size > 0);
+    const beforeAfter = filesOf("before_after_photos");
+    const team = filesOf("team_photos");
+    const videos = filesOf("videos");
+
+    const links = {
+      beforeAfter: cleanLink(data.before_after_photos_link),
+      team: cleanLink(data.team_photos_link),
+      videos: cleanLink(data.videos_link)
+    };
 
     const id = crypto.randomUUID();
     const submittedAt = new Date().toISOString();
 
-    // Reuses this client's folder if one already exists (e.g. a second
-    // submission from the same business), otherwise creates it.
+    // Reuses this client's folder if one already exists, otherwise creates it.
     const accessToken = await getGoogleAccessToken(env);
-    const folderName = (data.business_name || id) + " — Assets";
-    const folder = await findOrCreateDriveFolder(accessToken, env.GOOGLE_DRIVE_PARENT_FOLDER_ID, folderName);
-    const driveFolderUrl = folder.webViewLink;
-    for (const file of allFiles) {
-      await uploadFileToDrive(accessToken, folder.id, file);
+    const folder = await findOrCreateDriveFolder(accessToken, env.GOOGLE_DRIVE_PARENT_FOLDER_ID, businessName + " — Assets");
+    const driveFolderUrl = folder.webViewLink || "";
+
+    for (const f of beforeAfter) await uploadFileToDrive(accessToken, folder.id, f, "Before-After - " + (f.name || "photo"));
+    for (const f of team) await uploadFileToDrive(accessToken, folder.id, f, "Team - " + (f.name || "photo"));
+    for (const f of videos) await uploadFileToDrive(accessToken, folder.id, f, "Video - " + (f.name || "video"));
+
+    const linkLines = [];
+    if (links.beforeAfter) linkLines.push("Before and after photos: " + links.beforeAfter);
+    if (links.team) linkLines.push("Team photos: " + links.team);
+    if (links.videos) linkLines.push("Videos: " + links.videos);
+    if (linkLines.length) {
+      const note = new Blob(["Links " + businessName + " sent instead of uploading files (" + submittedAt + ")\n\n" + linkLines.join("\n") + "\n"], { type: "text/plain" });
+      await uploadFileToDrive(accessToken, folder.id, note, "Client links - " + submittedAt.slice(0, 10) + " " + id.slice(0, 6) + ".txt");
     }
+
+    const topServices = formatServices(data.top_3_services);
+    const offerDetails = formatOffers(data.offer_details);
 
     await env.DB.prepare(
       `INSERT INTO assets_submissions (
@@ -59,25 +88,28 @@ export async function handleSubmitAssets(request, env) {
       ) VALUES (?,?,?,?, ?,?,?, ?,?,?)`
     ).bind(
       id, submittedAt, "ads", "assets",
-      data.business_name,
-      data.top_3_services || "",
-      data.offer_details || "",
-      driveFolderUrl, photos.length, videos.length
+      businessName, topServices, offerDetails,
+      driveFolderUrl, beforeAfter.length + team.length, videos.length
     ).run();
 
     // Best-effort push to Google Sheets — never blocks the actual submission.
     // Matched to the client's existing row by business name.
     try {
+      const photoLinks = [];
+      if (links.beforeAfter) photoLinks.push("Before and after: " + links.beforeAfter);
+      if (links.team) photoLinks.push("Team: " + links.team);
+      const videoLinks = links.videos ? ["Videos: " + links.videos] : [];
+
       const sheetsRes = await fetch(env.SHEETS_WEBHOOK_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           part: "assets",
-          business_name: data.business_name,
-          top_3_services: data.top_3_services || "",
-          offer_details: data.offer_details || "",
-          before_after_photos: driveFolderUrl || "",
-          videos: driveFolderUrl || ""
+          business_name: businessName,
+          top_3_services: topServices,
+          offer_details: offerDetails,
+          before_after_photos: withLinks(driveFolderUrl, photoLinks),
+          videos: withLinks(driveFolderUrl, videoLinks)
         })
       });
       const sheetsBody = await sheetsRes.text();
@@ -100,125 +132,41 @@ function json(obj, status = 200) {
 }
 
 /* ==========================================================================
-   Google Drive — service-account auth via Web Crypto (no Node dependency)
+   Turning the answers into readable text for the database and the Sheet
    ========================================================================== */
 
-async function getGoogleAccessToken(env) {
-  const keyJson = JSON.parse(env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON);
-  const now = Math.floor(Date.now() / 1000);
+const text = v => (v == null ? "" : String(v));
+const cleanLink = v => (typeof v === "string" ? v.trim() : "");
 
-  const header = { alg: "RS256", typ: "JWT" };
-  const claims = {
-    iss: keyJson.client_email,
-    scope: "https://www.googleapis.com/auth/drive",
-    aud: "https://oauth2.googleapis.com/token",
-    iat: now,
-    exp: now + 3600
-  };
-
-  const unsigned = base64url(JSON.stringify(header)) + "." + base64url(JSON.stringify(claims));
-  const key = await importPrivateKey(keyJson.private_key);
-  const signature = await crypto.subtle.sign(
-    { name: "RSASSA-PKCS1-v1_5" },
-    key,
-    new TextEncoder().encode(unsigned)
-  );
-  const jwt = unsigned + "." + base64urlFromBuffer(signature);
-
-  const res = await fetch("https://oauth2.googleapis.com/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-      assertion: jwt
-    })
-  });
-  if (!res.ok) throw new Error("Google auth failed: " + await res.text());
-  const tok = await res.json();
-  return tok.access_token;
+// The folder link, then any links the client pasted, in one cell.
+function withLinks(folderUrl, links) {
+  return links.length ? (folderUrl ? folderUrl + " · " : "") + "Client links: " + links.join(" | ") : (folderUrl || "");
 }
 
-async function importPrivateKey(pem) {
-  const b64 = pem.replace(/-----BEGIN PRIVATE KEY-----/, "").replace(/-----END PRIVATE KEY-----/, "").replace(/\s/g, "");
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
-  return crypto.subtle.importKey(
-    "pkcs8",
-    bytes.buffer,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"]
-  );
-}
-
-function base64url(str) { return base64urlFromBuffer(new TextEncoder().encode(str)); }
-
-function base64urlFromBuffer(buf) {
-  const bytes = new Uint8Array(buf);
-  let bin = "";
-  for (let i = 0; i < bytes.length; i++) bin += String.fromCharCode(bytes[i]);
-  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-async function findOrCreateDriveFolder(accessToken, parentId, name) {
-  const escapedName = name.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
-  const query = "name = '" + escapedName + "' and mimeType = 'application/vnd.google-apps.folder' and trashed = false and '" + parentId + "' in parents";
-
-  // Tells Drive to search INSIDE the Shared Drive. Without corpora/driveId,
-  // a service account's search can come back empty even when the folder
-  // exists, which made every submission create a brand-new folder.
-  // parentId is the Shared Drive's own ID, so it doubles as the driveId.
-  const listRes = await fetch(
-    "https://www.googleapis.com/drive/v3/files?" + new URLSearchParams({
-      q: query,
-      fields: "files(id,webViewLink)",
-      corpora: "drive",
-      driveId: parentId,
-      supportsAllDrives: "true",
-      includeItemsFromAllDrives: "true"
-    }),
-    { headers: { Authorization: "Bearer " + accessToken } }
-  );
-  if (!listRes.ok) throw new Error("Drive folder lookup failed: " + await listRes.text());
-  const listData = await listRes.json();
-  if (listData.files && listData.files.length > 0) {
-    return listData.files[0];
+// ["Roofing", "Gutters", "Siding", "Skylights"] -> "Roofing; Gutters; Siding; Skylights (extra)"
+// Older versions of the form sent plain text, so a string is passed through as is.
+function formatServices(v) {
+  if (Array.isArray(v)) {
+    return v.map(x => text(x).trim()).filter(Boolean).map((s, i) => (i >= 3 ? s + " (extra)" : s)).join("; ");
   }
-
-  return createDriveFolder(accessToken, parentId, name);
+  return text(v).trim();
 }
 
-async function createDriveFolder(accessToken, parentId, name) {
-  const res = await fetch("https://www.googleapis.com/drive/v3/files?supportsAllDrives=true&fields=id,webViewLink", {
-    method: "POST",
-    headers: { Authorization: "Bearer " + accessToken, "Content-Type": "application/json" },
-    body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] })
-  });
-  if (!res.ok) throw new Error("Drive folder create failed: " + await res.text());
-  return res.json();
-}
-
-async function uploadFileToDrive(accessToken, folderId, file) {
-  const metadata = { name: file.name, parents: [folderId] };
-  const boundary = "letlois-" + crypto.randomUUID();
-  const arrayBuf = await file.arrayBuffer();
-
-  const preamble =
-    "--" + boundary + "\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n" + JSON.stringify(metadata) + "\r\n" +
-    "--" + boundary + "\r\nContent-Type: " + (file.type || "application/octet-stream") + "\r\n\r\n";
-  const closing = "\r\n--" + boundary + "--";
-
-  const body = new Blob([preamble, arrayBuf, closing]);
-
-  const res = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&supportsAllDrives=true", {
-    method: "POST",
-    headers: {
-      Authorization: "Bearer " + accessToken,
-      "Content-Type": "multipart/related; boundary=" + boundary
-    },
-    body
-  });
-  if (!res.ok) throw new Error("Drive file upload failed: " + await res.text());
-  return res.json();
+// One block per service, so a cell reads like:
+//   1. Roofing
+//   Offer: Full roof replacements...
+//   Promo: 10% off for new customers
+function formatOffers(v) {
+  if (Array.isArray(v)) {
+    return v.map((r, i) => {
+      const lines = [
+        (i + 1) + ". " + text(r.item).trim() + (i >= 3 ? " (extra page)" : ""),
+        "Offer: " + text(r.offer).trim(),
+        "Promo: " + text(r.promo).trim()
+      ];
+      if (r.why) lines.push("Why this page: " + text(r.why).trim());
+      return lines.join("\n");
+    }).join("\n\n");
+  }
+  return text(v).trim();
 }
