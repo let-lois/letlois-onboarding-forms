@@ -29,7 +29,14 @@
      file        takes accept / multiple / maxSizeMB / dropText, and
                  allowLink:true adds a "paste a link instead" box that also
                  satisfies a required file step. CONFIG.maxTotalMB caps the
-                 total size of every upload in the form.
+                 total size of every upload in the form (in MB; 20480 = 20 GB).
+
+   Big uploads (Part 3): set chunkedUpload:true on the page's config and the
+   files are sent ahead of the final submit, in 10 MB pieces, to
+   /api/upload/*, with a progress bar, automatic retries and resume-on-retry.
+   The final submit is then a small JSON message (the answers plus the list
+   of uploaded files). Without chunkedUpload, files go inside the one
+   FormData request exactly as before (Part 2's logo upload still does).
 
    And these step options:
 
@@ -78,7 +85,14 @@
   function formatBytes(bytes) {
     if (bytes < 1024) return bytes + " B";
     if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + " KB";
-    return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + " MB";
+    return (bytes / (1024 * 1024 * 1024)).toFixed(2) + " GB";
+  }
+
+  // 60 -> "60 MB", 20480 -> "20 GB"
+  function formatMB(mb) {
+    if (mb >= 1024) return (mb % 1024 === 0 ? String(mb / 1024) : (mb / 1024).toFixed(1)) + " GB";
+    return mb + " MB";
   }
 
   // Input masking (e.g. mask: "XX-XXXXXXX") — "X" is a digit slot, any other
@@ -256,7 +270,7 @@
       const cap = CONFIG.maxTotalMB;
       if (!cap) return "";
       const used = totalFileBytes();
-      return used ? formatBytes(used) + " of " + cap + " MB used across this whole form." : "Upload limit: " + cap + " MB in total across this whole form.";
+      return used ? formatBytes(used) + " of " + formatMB(cap) + " used across this whole form." : "Upload limit: " + formatMB(cap) + " in total across this whole form.";
     }
 
     /* ---------------------------------------------------------------------
@@ -825,7 +839,13 @@
     function renderEndStage() {
       if (submitState === "submitting") {
         const bytes = totalFileBytes();
-        const note = bytes > 0 ? '<p class="subtitle upload-note" style="margin-left:auto;margin-right:auto;">Uploading ' + formatBytes(bytes) + ". Please keep this page open. Large videos can take a few minutes.</p>" : "";
+        let note = bytes > 0 ? '<p class="subtitle upload-note" style="margin-left:auto;margin-right:auto;">Uploading ' + formatBytes(bytes) + ". Please keep this page open. Large videos can take a few minutes.</p>" : "";
+        if (CONFIG.chunkedUpload && bytes > 0) {
+          note = '<div style="height:8px;border-radius:999px;background:#2a2a2a;overflow:hidden;margin:16px auto 0;max-width:320px;">' +
+            '<div id="uploadBar" style="height:100%;width:' + uploadPercent() + '%;background:linear-gradient(90deg,#0F75BC,#47B7E8);transition:width .3s;"></div></div>' +
+            '<p class="subtitle upload-note" id="uploadText" style="margin-left:auto;margin-right:auto;">' + escapeHtml(uploadText()) + "</p>" +
+            '<p class="subtitle upload-note" style="margin-left:auto;margin-right:auto;">Please keep this page open until it finishes. Your original quality is kept.</p>';
+        }
         return '<div class="stage end"><div class="spinner-row"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; filing your details</div>' + note + "</div>";
       }
       if (submitState === "error") {
@@ -1494,9 +1514,9 @@
       const problems = [];
       const incoming = Array.from(fileList).filter(f => {
         if (!isAcceptedFile(f, accept)) { problems.push(f.name + " isn't a supported file type"); return false; }
-        if (maxBytes && f.size > maxBytes) { problems.push(f.name + " is over " + step.maxSizeMB + " MB"); return false; }
+        if (maxBytes && f.size > maxBytes) { problems.push(f.name + " is over " + formatMB(step.maxSizeMB)); return false; }
         if (existing.some(e => e.name === f.name && e.size === f.size && e.lastModified === f.lastModified)) return false;
-        if (capBytes && running + f.size > capBytes) { problems.push(f.name + " would go over the " + CONFIG.maxTotalMB + " MB upload limit for this form"); return false; }
+        if (capBytes && running + f.size > capBytes) { problems.push(f.name + " would go over the " + formatMB(CONFIG.maxTotalMB) + " upload limit for this form"); return false; }
         running += f.size;
         return true;
       });
@@ -1593,6 +1613,147 @@
       return out;
     }
 
+    /* ---------------------------------------------------------------------
+       Big uploads (CONFIG.chunkedUpload): files go up first, in 10 MB pieces,
+       then one small JSON message files the answers.
+       --------------------------------------------------------------------- */
+    const CHUNK_BYTES = 10 * 1024 * 1024;
+    const POOL_SIZE = 3;
+    const uploadedFiles = new WeakMap();   // File -> { key, name, size }; lets a retry skip finished files
+    const up = { total: 0, done: 0, count: 0, finished: 0 };
+
+    function uploadPercent() { return up.total > 0 ? Math.min(100, Math.floor((up.done / up.total) * 100)) : 0; }
+    function uploadText() {
+      if (up.total === 0) return "";
+      return uploadPercent() + "% \u00b7 " + formatBytes(up.done) + " of " + formatBytes(up.total) + " \u00b7 " + up.finished + " of " + up.count + " files";
+    }
+    function paintUpload() {
+      const bar = document.getElementById("uploadBar");
+      const txt = document.getElementById("uploadText");
+      if (bar) bar.style.width = uploadPercent() + "%";
+      if (txt) txt.textContent = uploadText();
+    }
+
+    const sleep = ms => new Promise(r => setTimeout(r, ms));
+
+    async function sendJson(url, opts) {
+      const res = await fetch(url, opts);
+      let body = null;
+      try { body = await res.json(); } catch (e) { /* not JSON */ }
+      if (!res.ok || !body || body.ok === false) {
+        const err = new Error((body && body.error) || ("Server responded with status " + res.status));
+        // a 4xx means the server rejected the file itself, so retrying won't help
+        err.fatal = res.status >= 400 && res.status < 500 && res.status !== 408 && res.status !== 429;
+        throw err;
+      }
+      return body;
+    }
+
+    async function withRetry(fn) {
+      let last;
+      for (let i = 0; i < 4; i++) {
+        try { return await fn(); }
+        catch (e) { last = e; if (e && e.fatal) throw e; await sleep(800 * Math.pow(2, i)); }
+      }
+      throw last;
+    }
+
+    // Uploads one file. report(n) says how many of its bytes are safely uploaded so far.
+    async function uploadOne(file, field, business, report) {
+      const name = file.name || "file";
+      const type = file.type || "";
+      if (file.size <= CHUNK_BYTES) {
+        const q = "business=" + encodeURIComponent(business) + "&field=" + encodeURIComponent(field) + "&name=" + encodeURIComponent(name);
+        const r = await withRetry(() => sendJson("/api/upload/file?" + q, {
+          method: "PUT", headers: { "Content-Type": type || "application/octet-stream" }, body: file
+        }));
+        report(file.size);
+        return { key: r.key, name: name, size: file.size };
+      }
+
+      const start = await withRetry(() => sendJson("/api/upload/start", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ business_name: business, field: field, name: name, size: file.size, type: type })
+      }));
+      const parts = [];
+      let sent = 0;
+      try {
+        for (let off = 0, n = 1; off < file.size; off += CHUNK_BYTES, n++) {
+          const piece = file.slice(off, Math.min(off + CHUNK_BYTES, file.size));
+          const q = "key=" + encodeURIComponent(start.key) + "&uploadId=" + encodeURIComponent(start.uploadId) + "&partNumber=" + n;
+          const p = await withRetry(() => sendJson("/api/upload/part?" + q, { method: "PUT", body: piece }));
+          parts.push({ partNumber: p.partNumber, etag: p.etag });
+          sent += piece.size;
+          report(sent);
+        }
+        await withRetry(() => sendJson("/api/upload/complete", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ key: start.key, uploadId: start.uploadId, parts: parts })
+        }));
+      } catch (e) {
+        try {
+          await fetch("/api/upload/abort", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ key: start.key, uploadId: start.uploadId }) });
+        } catch (e2) { /* the bucket cleans up unfinished uploads on its own */ }
+        throw e;
+      }
+      return { key: start.key, name: name, size: file.size };
+    }
+
+    async function uploadAll(items, business) {
+      const progress = items.map(() => 0);
+      const recount = () => { up.done = progress.reduce((a, b) => a + b, 0); up.finished = items.filter(it => uploadedFiles.has(it.file)).length; paintUpload(); };
+      recount();
+      let next = 0, failure = null;
+      const worker = async () => {
+        while (!failure) {
+          const i = next++;
+          if (i >= items.length) return;
+          const it = items[i];
+          if (uploadedFiles.has(it.file)) { progress[i] = it.file.size; recount(); continue; }
+          try {
+            const result = await uploadOne(it.file, it.field, business, n => { progress[i] = n; recount(); });
+            uploadedFiles.set(it.file, result);
+            progress[i] = it.file.size;
+          } catch (e) {
+            progress[i] = 0;
+            failure = failure || e;
+          }
+          recount();
+        }
+      };
+      await Promise.all(Array.from({ length: Math.min(POOL_SIZE, Math.max(items.length, 1)) }, worker));
+      if (failure) throw failure;
+    }
+
+    async function submitChunked(payload, fileSteps) {
+      const business = String(payload.business_name || "").trim();
+      const items = [];
+      fileSteps.forEach(s => (answers[s.id] || []).forEach(f => items.push({ file: f, field: s.id })));
+      up.total = items.reduce((sum, it) => sum + (it.file.size || 0), 0);
+      up.count = items.length;
+      up.done = 0; up.finished = 0;
+      paintUpload();
+
+      const warn = e => { e.preventDefault(); e.returnValue = ""; };
+      let lock = null;
+      try { if (global.navigator && navigator.wakeLock) lock = await navigator.wakeLock.request("screen"); } catch (e) { /* optional */ }
+      global.addEventListener("beforeunload", warn);
+      try {
+        await uploadAll(items, business);
+        const uploaded = {};
+        fileSteps.forEach(s => {
+          uploaded[s.id] = (answers[s.id] || []).map(f => uploadedFiles.get(f)).filter(Boolean);
+        });
+        await sendJson(CONFIG.apiEndpoint, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(Object.assign({}, payload, { uploaded_files: uploaded }))
+        });
+      } finally {
+        global.removeEventListener("beforeunload", warn);
+        try { if (lock) await lock.release(); } catch (e) { /* ignore */ }
+      }
+    }
+
     async function submitForm() {
       const DEMO = global.location.protocol === "file:";
       const payload = buildJsonPayload();
@@ -1602,6 +1763,8 @@
         if (DEMO) {
           console.warn("[OnboardingForm] DEMO MODE (opened as a local file) \u2014 nothing was sent. Payload that would have been submitted:", payload, fileSteps.map(s => (answers[s.id] || []).map(f => f.name)));
           await new Promise(r => setTimeout(r, 650));
+        } else if (CONFIG.chunkedUpload) {
+          await submitChunked(payload, fileSteps);
         } else {
           const fd = new FormData();
           fd.append("data", JSON.stringify(payload));
