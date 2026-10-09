@@ -14,10 +14,13 @@
   Every question here is required. The only optional thing is the fourth
   service on the services question.
 
-  maxTotalMB is the most a client can upload in one go, across every upload
-  question combined. Each upload question also has a "paste a link" box so a
-  required upload is never a dead end. Raise maxTotalMB only after testing a
-  large submission end to end.
+  chunkedUpload sends the files ahead of the final submit, in 10 MB pieces,
+  into the private R2 bucket, so very large videos work and nothing is
+  compressed. maxTotalMB (20480 = 20 GB) is the most a client can upload in one
+  go, across every upload question combined; maxSizeMB on a question is the
+  limit for a single file (a single file can never be over 5 GB). Each upload
+  question also has a "paste a link" box so a required upload is never a dead
+  end.
 -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -42,7 +45,8 @@
     partLabel: "Onboarding Form · Part 3",
     apiEndpoint: "/api/submit-assets",
     fallbackEmail: "hello@letlois.com",
-    maxTotalMB: 60,
+    chunkedUpload: true,
+    maxTotalMB: 20480,
 
     steps: [
       { id: "welcome", type: "welcome",
@@ -82,7 +86,7 @@
             placeholder: "Tell us why this service matters to your business." }
         ] },
 
-      { id: "before_after_photos", type: "file", required: true, multiple: true, maxSizeMB: 25, allowLink: true,
+      { id: "before_after_photos", type: "file", required: true, multiple: true, maxSizeMB: 100, allowLink: true,
         accept: "image/*,.heic,.heif",
         question: "Upload before and after photos of your work.",
         subtitle: "Show us the jobs you're proudest of. We'll feature your best work on {{top_3_services|your services}} on your website.",
@@ -90,7 +94,7 @@
         linkLabel: "Lots of photos? Paste a link to a folder instead (Google Drive, Dropbox, or WeTransfer).",
         context: "Real photos of your own work build trust faster than anything else on a landing page. Send a mix of before and after shots, finished jobs, and work in progress. Phone photos are perfect." },
 
-      { id: "team_photos", type: "file", required: true, multiple: true, maxSizeMB: 25, allowLink: true,
+      { id: "team_photos", type: "file", required: true, multiple: true, maxSizeMB: 100, allowLink: true,
         accept: "image/*,.heic,.heif",
         question: "Upload photos of your team.",
         subtitle: "Headshots, a crew photo, your trucks, or your shop or office all work great.",
@@ -98,13 +102,13 @@
         linkLabel: "Lots of photos? Paste a link to a folder instead (Google Drive, Dropbox, or WeTransfer).",
         context: "People hire people they can picture at their door. Real photos of you and your crew make your website feel local and trustworthy, and they go on your About and contact sections." },
 
-      { id: "videos", type: "file", required: true, multiple: true, maxSizeMB: 60, allowLink: true,
+      { id: "videos", type: "file", required: true, multiple: true, maxSizeMB: 5120, allowLink: true,
         accept: "video/*,.mp4,.mov,.m4v,.webm,.avi",
         question: "Upload any and all videos you have.",
         subtitle: "Jobs in progress, finished projects, walk-throughs of your work, your office or shop, your crew and trucks, or customer testimonials. Phone videos are perfect.",
         dropText: "Drop your videos here, or click to browse",
-        linkLabel: "Videos too big to upload? Paste a link instead (Google Drive, Dropbox, or WeTransfer).",
-        context: "Video turns visitors into customers. We use your clips on your landing pages and in your ads, and raw phone footage works great. If your videos are too large to upload here, paste a link to them below." },
+        linkLabel: "Having trouble uploading? Paste a link to your videos instead (Google Drive, Dropbox, or WeTransfer).",
+        context: "Video turns visitors into customers. We use your clips on your landing pages and in your ads, and raw phone footage works great. We keep your videos in their original quality, so upload them as they are, with no need to shrink or compress them. If uploading doesn't work for you, paste a link to them below." },
 
       { id: "end", type: "end",
         title: "Part 3 complete.",
