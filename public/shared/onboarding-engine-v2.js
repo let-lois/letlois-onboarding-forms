@@ -550,8 +550,11 @@
 
       if (type === "colors") {
         const v = answers[step.id];
-        const hasLogo = !!(step.logoStepId && (answers[step.logoStepId] || []).length);
-        let html = '<div class="answer-area colors-area"><div class="color-slots">';
+        const logoFile = step.logoStepId ? (answers[step.logoStepId] || [])[0] : null;
+        const hasLogo = !!logoFile;
+        const canPreview = hasLogo && (/^image\//.test(logoFile.type || "") || /\.(png|jpe?g|gif|webp|svg)$/i.test(logoFile.name || ""));
+        const start = canPreview ? "logo" : "scale";
+        let html = '<div class="answer-area colors-area" data-start="' + start + '"><div class="color-slots">';
         step.slots.forEach(s => {
           const hex = normHex(v[s.id]) || "";
           html += '<div class="color-slot">' +
@@ -562,18 +565,29 @@
             (s.required ? "" : '<button type="button" class="slot-clear" data-clear="' + escapeAttr(s.id) + '" aria-label="Clear ' + escapeAttr(s.label) + '"' + (hex ? "" : " hidden") + ">&times;</button>") +
             "</div>";
         });
-        html += "</div>" +
+        html += "</div>";
+
+        // On phones only one way of picking shows at a time, chosen with these
+        // tabs, so the whole step fits on screen. On wide screens every way
+        // shows at once and the tabs are hidden (see onboarding-extras.css).
+        const tab = (id, label) => '<button type="button" class="method-tab' + (id === start ? " active" : "") + '" data-method-btn="' + id + '" role="tab" aria-selected="' + (id === start) + '">' + label + "</button>";
+        const panel = (id, inner) => '<div class="method-panel' + (id === start ? " is-active" : "") + '" data-panel="' + id + '">' + inner + "</div>";
+        html += '<div class="method-tabs" role="tablist" aria-label="How to pick a color">' +
+          (hasLogo ? tab("logo", "Your logo") : "") + tab("scale", "Color scale") + tab("quick", "Quick colors") + "</div>";
+
+        html += panel("scale",
           '<div class="scale-area">' +
             '<div class="scale-box" id="scaleBox" tabindex="0" role="application" aria-label="Color scale. Drag, or use the arrow keys, to choose a shade."><div class="scale-handle" id="scaleHandle" hidden></div></div>' +
             '<div class="scale-row"><span class="scale-preview" id="scalePreview"></span>' +
               '<input type="range" class="hue-range" id="hueRange" min="0" max="360" step="1" value="210" aria-label="Color hue"></div>' +
           "</div>" +
           '<div class="hex-field"><label class="cap" for="hexInput">Or type a color code</label>' +
-            '<input class="text-input small hex-input" id="hexInput" type="text" maxlength="7" placeholder="#0F75BC" autocomplete="off" spellcheck="false"></div>' +
+            '<input class="text-input small hex-input" id="hexInput" type="text" maxlength="7" placeholder="#0F75BC" autocomplete="off" spellcheck="false"></div>');
+        html += panel("quick",
           '<div class="quick-colors"><p class="cap">Quick colors</p><div class="palette" role="group" aria-label="Quick colors">' +
             PALETTE.map(h => '<button type="button" class="pal-swatch" data-hex="' + h + '" style="background:' + h + '" aria-label="' + h + '"></button>').join("") +
-          "</div></div>";
-        if (hasLogo) html += '<div class="logo-pick" id="logoPick"><div class="logo-frame"></div><p class="logo-hint">Or tap a spot on your logo to use its color.</p></div>';
+          "</div></div>");
+        if (hasLogo) html += panel("logo", '<div class="logo-pick" id="logoPick"><div class="logo-frame"></div><p class="logo-hint">Tap a spot on your logo to use its color.</p></div>');
         return html + "</div>";
       }
 
@@ -1038,6 +1052,16 @@
         refreshContinue(step);
       }
 
+      // phones: the tab bar picks which way of choosing a color is showing
+      document.querySelectorAll("[data-method-btn]").forEach(b => b.addEventListener("click", () => {
+        const m = b.dataset.methodBtn;
+        document.querySelectorAll("[data-method-btn]").forEach(t => {
+          const on = t.dataset.methodBtn === m;
+          t.classList.toggle("active", on);
+          t.setAttribute("aria-selected", on ? "true" : "false");
+        });
+        document.querySelectorAll("[data-panel]").forEach(p => p.classList.toggle("is-active", p.dataset.panel === m));
+      }));
       document.querySelectorAll("[data-slot]").forEach(b => b.addEventListener("click", () => { active = b.dataset.slot; refresh(); }));
       document.querySelectorAll("[data-clear]").forEach(b => b.addEventListener("click", () => { delete val[b.dataset.clear]; active = b.dataset.clear; refresh(); }));
       document.querySelectorAll("[data-hex]").forEach(b => b.addEventListener("click", () => setColor(b.dataset.hex)));
@@ -1098,8 +1122,8 @@
       const frame = box.querySelector(".logo-frame");
       const hint = box.querySelector(".logo-hint");
       const file = (answers[step.logoStepId] || [])[0];
-      const base = "Or tap a spot on your logo to use its color.";
-      const fallback = "use the quick colors or the color scale above.";
+      const base = "Tap a spot on your logo to use its color.";
+      const fallback = "use the color scale or the quick colors instead.";
       if (!file) { box.hidden = true; return; }
       const isImage = /^image\//.test(file.type || "") || /\.(png|jpe?g|gif|webp|svg)$/i.test(file.name || "");
       if (!isImage) { hint.textContent = "We can't preview that kind of file here, so " + fallback; return; }
