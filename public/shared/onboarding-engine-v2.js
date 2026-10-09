@@ -1,10 +1,9 @@
 /* ==========================================================================
    LetLois Onboarding — shared form engine, v2
    ==========================================================================
-   Used by the Part 2 (Website) form. Parts 1 and 3 still run on
-   onboarding-engine.js. This file does everything that one does (text,
-   email, tel, textarea, select, multiselect, address, file, consent,
-   checklist-detail, repeater, welcome, end) plus:
+   Used by all three forms (Parts 1, 2 and 3). It handles text, email, tel,
+   textarea, select, multiselect, address, file, consent, repeater, welcome
+   and end, plus:
 
      list        N required bulleted fields plus an "Add another" button
      rows        rows of inputs (price lists, tiers), can start pre-filled
@@ -16,9 +15,27 @@
                  square, slide the hue), quick colors, a code box, or by
                  clicking the client's uploaded logo
      radius-map  ZIP code plus a radius slider drawn on a map
-     file        now takes accept / multiple / maxSizeMB / dropText
+     checklist-detail
+                 tap-to-toggle options (otherLabel adds a "Something else"
+                 box, noneLabel adds an exclusive "none of these"), plus a
+                 notes box. notesRequired / notesMinChars make the notes
+                 mandatory; noneNotesLabel / noneNotesPlaceholder swap the
+                 notes question when "none" is picked.
+     item-details
+                 one titled section per item from an earlier list answer
+                 (itemsFrom), each with textareas (fields). Items from
+                 extraFromIndex on also get extraFields. {item} inside a
+                 label is replaced with the item's name.
+     file        takes accept / multiple / maxSizeMB / dropText, and
+                 allowLink:true adds a "paste a link instead" box that also
+                 satisfies a required file step. CONFIG.maxTotalMB caps the
+                 total size of every upload in the form.
 
    And these step options:
+
+     {{id}} / {{id|fallback}}    inside a question, subtitle or "why we ask"
+                                 text becomes that earlier answer ("A, B and
+                                 C"), or the fallback if it is empty.
 
      showIf: { id, equals }      only show this step when an earlier answer
                                  matches. { id, path, equals } looks inside
@@ -120,6 +137,16 @@
     return { h: h, s: max === 0 ? 0 : d / max, v: max };
   }
 
+  // "drive.google.com/x" -> "https://drive.google.com/x", "" -> "", anything that
+  // isn't a web address -> null.
+  function normLink(raw) {
+    const t = String(raw == null ? "" : raw).trim();
+    if (!t) return "";
+    if (/^https?:\/\/\S+\.\S+$/i.test(t)) return t;
+    if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(t)) return "https://" + t;
+    return null;
+  }
+
   // accept works like the HTML attribute: "image/*,.pdf,.ai"
   function isAcceptedFile(file, accept) {
     const tokens = String(accept || "").split(",").map(t => t.trim().toLowerCase()).filter(Boolean);
@@ -198,6 +225,40 @@
     }
     const isSkipped = step => !!(step.skippable && answers[step.id] && answers[step.id].skipped === true);
 
+    // {{id}} or {{id|fallback}} in a question, subtitle or "why we ask" text becomes
+    // that earlier answer, so a question can speak to what the client already told us.
+    function fill(text) {
+      return String(text == null ? "" : text).replace(/\{\{\s*([\w-]+)\s*(?:\|([^}]*))?\}\}/g, (m, id, fallback) => {
+        const v = answers[id];
+        const items = (Array.isArray(v) ? v : typeof v === "string" ? [v] : []).map(x => String(x == null ? "" : x).trim()).filter(Boolean);
+        if (!items.length) return fallback == null ? "" : fallback.trim();
+        return items.length === 1 ? items[0] : items.slice(0, -1).join(", ") + " and " + items[items.length - 1];
+      });
+    }
+    const subItem = (text, item) => String(text == null ? "" : text).replace(/\{item\}/g, item);
+
+    // The fields one item-details section asks for. Items past extraFromIndex (the
+    // optional extras) also get extraFields.
+    function detailFields(step, i) {
+      const extraFrom = step.extraFromIndex == null ? Infinity : step.extraFromIndex;
+      return (step.fields || []).concat(i >= extraFrom ? (step.extraFields || []) : []);
+    }
+
+    // Total size of every file picked in the form (optionally leaving one step out).
+    function totalFileBytes(exceptStepId) {
+      let sum = 0;
+      ALL.forEach(st => {
+        if (st.type === "file" && isVisible(st) && st.id !== exceptStepId) (answers[st.id] || []).forEach(f => { sum += f.size || 0; });
+      });
+      return sum;
+    }
+    function totalNoteText() {
+      const cap = CONFIG.maxTotalMB;
+      if (!cap) return "";
+      const used = totalFileBytes();
+      return used ? formatBytes(used) + " of " + cap + " MB used across this whole form." : "Upload limit: " + cap + " MB in total across this whole form.";
+    }
+
     /* ---------------------------------------------------------------------
        Starting values for the newer step types
        --------------------------------------------------------------------- */
@@ -216,7 +277,30 @@
         if (!answers[step.id] || typeof answers[step.id] !== "object") answers[step.id] = { zip: "", miles: step.defaultMiles || 25 };
       } else if (step.type === "cards") {
         if (!answers[step.id] || typeof answers[step.id] !== "object") answers[step.id] = {};
+      } else if (step.type === "checklist-detail") {
+        const cur = answers[step.id];
+        answers[step.id] = Object.assign({ selected: [], other: "", notes: "" }, cur && typeof cur === "object" ? cur : {});
+      } else if (step.type === "item-details") {
+        syncDetails(step);
       }
+    }
+
+    // Builds (or rebuilds) the sections of an item-details step from the earlier
+    // list. What the client already wrote is kept for any service that is still
+    // there, and also when a service was only renamed in place.
+    function syncDetails(step) {
+      const src = answers[step.itemsFrom];
+      const labels = (Array.isArray(src) ? src : []).map(x => String(x || "").trim()).filter(Boolean);
+      const old = Array.isArray(answers[step.id]) ? answers[step.id] : [];
+      const lc = x => String(x || "").trim().toLowerCase();
+      const newLc = labels.map(lc);
+      answers[step.id] = labels.map((label, i) => {
+        const same = old.find(r => lc(r.item) === lc(label));
+        if (same) return Object.assign({}, same, { item: label });
+        const atSlot = old[i];
+        if (atSlot && !newLc.includes(lc(atSlot.item))) return Object.assign({}, atSlot, { item: label });
+        return { item: label };
+      });
     }
 
     // Builds (or rebuilds) the rows for a rows step. Rows can start pre-filled
@@ -297,14 +381,33 @@
           const a = val || {};
           return !!(a.street && a.city && a.state && a.zip);
         }
-        case "file":
-          return step.required ? !!(val && val.length > 0) : true;
+        case "file": {
+          const hasFiles = !!(val && val.length > 0);
+          if (step.allowLink) {
+            const link = normLink(answers[step.id + "__link"]);
+            if (link === null) return false;              // something was typed that isn't a web address
+            return step.required ? (hasFiles || !!link) : true;
+          }
+          return step.required ? hasFiles : true;
+        }
         case "consent": {
           const c = val || {};
           return !!c.agreed;
         }
-        case "checklist-detail":
-          return step.required ? !!(val && val.selected && val.selected.length > 0) : true;
+        case "checklist-detail": {
+          const v = val || {};
+          const sel = v.selected || [];
+          if (step.required && sel.length === 0) return false;
+          if (step.otherLabel && sel.includes(step.otherLabel) && !String(v.other || "").trim()) return false;
+          if (step.notesRequired && String(v.notes || "").trim().length < (step.notesMinChars || 1)) return false;
+          return true;
+        }
+        case "item-details": {
+          if (step.required === false) return true;
+          const rows = Array.isArray(val) ? val : [];
+          if (!rows.length) return false;
+          return rows.every((row, i) => detailFields(step, i).every(f => String(row[f.key] || "").trim().length >= (f.minChars || 1)));
+        }
         case "list": {
           const items = val || [];
           const min = step.minItems || 1;
@@ -443,11 +546,19 @@
           '<div class="file-row"><span>' + escapeHtml(f.name) + " (" + formatBytes(f.size) + ')</span>' +
           '<button type="button" data-remove-file="' + i + '" aria-label="Remove ' + escapeAttr(f.name) + '">&times;</button></div>'
         ).join("");
+        const linkHtml = step.allowLink
+          ? '<div class="file-link"><label class="cap" for="fileLink">' + escapeHtml(step.linkLabel || "Too big to upload? Paste a link instead.") + "</label>" +
+            '<input class="text-input small" id="fileLink" type="text" inputmode="url" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="' +
+            escapeAttr(step.linkPlaceholder || "Google Drive, Dropbox or WeTransfer link") + '" value="' + escapeAttr(answers[step.id + "__link"] || "") + '">' +
+            '<p class="file-error" id="linkError" role="alert"></p></div>'
+          : "";
+        const totalHtml = CONFIG.maxTotalMB ? '<p class="file-total" id="fileTotal">' + escapeHtml(totalNoteText()) + "</p>" : "";
         return '<div class="answer-area">' +
           '<div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="' + escapeAttr(dropText) + '"><div>' + escapeHtml(dropText) + '</div></div>' +
           '<input type="file" id="fileInput" accept="' + escapeAttr(accept) + '"' + (multiple ? " multiple" : "") + ' style="display:none;">' +
           '<div class="file-list" id="fileList">' + rows + "</div>" +
           '<p class="file-error" id="fileError" role="alert">' + escapeHtml(fileError) + "</p>" +
+          totalHtml + linkHtml +
           "</div>";
       }
 
@@ -462,17 +573,50 @@
       }
 
       if (type === "checklist-detail") {
-        const val = answers[step.id] || { selected: [], notes: "" };
-        let html = '<div class="answer-area"><div class="options" role="listbox" aria-multiselectable="true">';
-        step.options.forEach(opt => {
-          const selected = (val.selected || []).includes(opt);
-          html += '<button type="button" class="option ' + (selected ? "selected" : "") + '" data-value="' + escapeAttr(opt) + '" role="option" aria-selected="' + selected + '">' +
-            '<span class="marker checkbox"></span><span>' + escapeHtml(opt) + "</span></button>";
-        });
-        html += "</div>" +
-          '<textarea class="text-input" id="notesInput" placeholder="' + escapeAttr(step.notesPlaceholder || "Anything else we should know?") + '" rows="3" style="margin-top:16px;">' +
-          escapeHtml(val.notes || "") + "</textarea></div>";
+        const val = answers[step.id];
+        const sel = val.selected || [];
+        const noneOn = !!(step.noneLabel && sel.includes(step.noneLabel));
+        const chip = (label, extraClass) => {
+          const on = sel.includes(label);
+          return '<button type="button" class="chip' + (extraClass ? " " + extraClass : "") + (on ? " selected" : "") + '" data-chip="' + escapeAttr(label) + '" aria-pressed="' + on + '">' +
+            '<span class="chip-box" aria-hidden="true"></span><span class="chip-text">' + escapeHtml(label) + "</span></button>";
+        };
+        let html = '<div class="answer-area checklist-area"><div class="chips" role="group" aria-label="' + escapeAttr(fill(step.question)) + '">';
+        step.options.forEach(o => { html += chip(o); });
+        if (step.otherLabel) html += chip(step.otherLabel);
+        if (step.noneLabel) html += chip(step.noneLabel, "chip-wide");
+        html += "</div>";
+        if (step.otherLabel) {
+          html += '<div class="checklist-other"' + (sel.includes(step.otherLabel) ? "" : " hidden") + '><label class="notes-label" for="checklistOther">' +
+            escapeHtml(step.otherPrompt || "Which one?") + '</label><input class="text-input" id="checklistOther" type="text" maxlength="120" autocomplete="off" placeholder="' +
+            escapeAttr(step.otherPlaceholder || "Type it here") + '" value="' + escapeAttr(val.other || "") + '"></div>';
+        }
+        html += '<div class="checklist-notes"><label class="notes-label" id="notesLabel" for="notesInput">' +
+          escapeHtml(noneOn && step.noneNotesLabel ? step.noneNotesLabel : (step.notesLabel || "Anything else we should know?")) + "</label>" +
+          '<textarea class="text-input" id="notesInput" rows="3" placeholder="' +
+          escapeAttr(noneOn && step.noneNotesPlaceholder ? step.noneNotesPlaceholder : (step.notesPlaceholder || "")) + '">' + escapeHtml(val.notes || "") + "</textarea>" +
+          '<p class="notes-hint" id="notesHint"></p></div></div>';
         return html;
+      }
+
+      if (type === "item-details") {
+        const rows = answers[step.id] || [];
+        const extraFrom = step.extraFromIndex == null ? Infinity : step.extraFromIndex;
+        let html = '<div class="answer-area details-area">';
+        rows.forEach((row, i) => {
+          html += '<section class="detail-card" aria-labelledby="detail-title-' + i + '">' +
+            '<h2 class="detail-title" id="detail-title-' + i + '"><span class="detail-num">' + (i + 1) + "</span><span>" + escapeHtml(row.item) + "</span>" +
+            (i >= extraFrom ? '<span class="detail-tag">Extra page</span>' : "") + "</h2>";
+          detailFields(step, i).forEach(f => {
+            const id = "detail-" + i + "-" + f.key;
+            html += '<div class="detail-field"><label class="detail-label" for="' + id + '">' + escapeHtml(subItem(f.label, row.item)) + "</label>" +
+              '<textarea class="text-input detail-input" id="' + id + '" data-detail-row="' + i + '" data-detail-key="' + escapeAttr(f.key) + '" rows="' + (f.rows || 3) + '" placeholder="' +
+              escapeAttr(subItem(f.placeholder || "", row.item)) + '">' + escapeHtml(row[f.key] || "") + "</textarea>" +
+              '<p class="detail-hint" data-hint-for="' + id + '"></p></div>';
+          });
+          html += "</section>";
+        });
+        return html + "</div>";
       }
 
       if (type === "repeater") {
@@ -653,9 +797,9 @@
             renderTabs(step) +
             '<div class="eyebrow">' + escapeHtml(CONFIG.partLabel || "") + " &middot; Question " +
               String(questionNumber(step)).padStart(2, "0") + " / " + String(visibleQuestions().length).padStart(2, "0") + "</div>" +
-            '<h1 class="question">' + escapeHtml(step.question) + "</h1>" +
-            (step.subtitle ? '<p class="subtitle">' + escapeHtml(step.subtitle) + "</p>" : "") +
-            (step.context ? renderContext(step.context) : "") +
+            '<h1 class="question">' + escapeHtml(fill(step.question)) + "</h1>" +
+            (step.subtitle ? '<p class="subtitle">' + escapeHtml(fill(step.subtitle)) + "</p>" : "") +
+            (step.context ? renderContext(fill(step.context)) : "") +
             (skipped ? renderSkippedNote() : renderAnswerArea(step)) +
             '<div class="nav-row">' +
               '<button class="btn-back" id="backBtn" ' + (currentIndex === 0 ? "disabled" : "") + ">&larr; Back</button>" +
@@ -680,7 +824,9 @@
 
     function renderEndStage() {
       if (submitState === "submitting") {
-        return '<div class="stage end"><div class="spinner-row"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; filing your details</div></div>';
+        const bytes = totalFileBytes();
+        const note = bytes > 0 ? '<p class="subtitle upload-note" style="margin-left:auto;margin-right:auto;">Uploading ' + formatBytes(bytes) + ". Please keep this page open. Large videos can take a few minutes.</p>" : "";
+        return '<div class="stage end"><div class="spinner-row"><span class="dot"></span><span class="dot"></span><span class="dot"></span>&nbsp; filing your details</div>' + note + "</div>";
       }
       if (submitState === "error") {
         return '<div class="stage end" style="text-align:left;">' +
@@ -775,13 +921,6 @@
             if (i === -1) arr.push(value); else arr.splice(i, 1);
             answers[step.id] = arr;
             renderStage();
-          } else if (step.type === "checklist-detail") {
-            const current = answers[step.id] || { selected: [], notes: "" };
-            const arr = current.selected.slice();
-            const i = arr.indexOf(value);
-            if (i === -1) arr.push(value); else arr.splice(i, 1);
-            answers[step.id] = { selected: arr, notes: current.notes };
-            renderStage();
           }
         });
       });
@@ -821,6 +960,21 @@
         });
       });
 
+      // "paste a link instead" box on a file step
+      const fileLink = document.getElementById("fileLink");
+      if (fileLink) {
+        const linkErr = document.getElementById("linkError");
+        fileLink.addEventListener("input", () => {
+          answers[step.id + "__link"] = fileLink.value;
+          if (linkErr) linkErr.textContent = "";
+          refreshContinue(step);
+        });
+        fileLink.addEventListener("blur", () => {
+          if (linkErr && normLink(fileLink.value) === null) linkErr.textContent = "That doesn't look like a web address. It should look like https://drive.google.com/...";
+        });
+        fileLink.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); tryAdvance(step); } });
+      }
+
       // consent
       const consentCheck = document.getElementById("consentCheck");
       if (consentCheck) {
@@ -830,15 +984,6 @@
             signed_at: answers[step.id] && answers[step.id].signed_at ? answers[step.id].signed_at : null
           };
           refreshContinue(step);
-        });
-      }
-
-      // checklist-detail notes
-      const notesInput = document.getElementById("notesInput");
-      if (notesInput) {
-        notesInput.addEventListener("input", e => {
-          const current = answers[step.id] || { selected: [], notes: "" };
-          answers[step.id] = { selected: current.selected, notes: e.target.value };
         });
       }
 
@@ -889,6 +1034,73 @@
       if (step.type === "cards") bindCards(step);
       if (step.type === "colors") bindColors(step);
       if (step.type === "radius-map") bindRadiusMap(step);
+      if (step.type === "checklist-detail") bindChecklist(step);
+      if (step.type === "item-details") bindDetails(step);
+    }
+
+    // checklist-detail: tap-to-toggle options, an optional "something else" box, and
+    // a notes box that changes its question when "none of these" is picked. Updates
+    // in place, so the page doesn't jump around while someone is choosing.
+    function bindChecklist(step) {
+      const val = answers[step.id];
+      const otherEl = document.getElementById("checklistOther");
+      const otherWrap = otherEl ? otherEl.closest(".checklist-other") : null;
+      const notesEl = document.getElementById("notesInput");
+      const labelEl = document.getElementById("notesLabel");
+      const hintEl = document.getElementById("notesHint");
+      const minChars = step.notesMinChars || 0;
+      const noneOn = () => !!(step.noneLabel && val.selected.includes(step.noneLabel));
+      const paint = () => {
+        document.querySelectorAll("[data-chip]").forEach(b => {
+          const on = val.selected.includes(b.dataset.chip);
+          b.classList.toggle("selected", on);
+          b.setAttribute("aria-pressed", on ? "true" : "false");
+        });
+        if (otherWrap) otherWrap.hidden = !(step.otherLabel && val.selected.includes(step.otherLabel));
+        labelEl.textContent = noneOn() && step.noneNotesLabel ? step.noneNotesLabel : (step.notesLabel || "Anything else we should know?");
+        notesEl.placeholder = noneOn() && step.noneNotesPlaceholder ? step.noneNotesPlaceholder : (step.notesPlaceholder || "");
+        const t = String(val.notes || "").trim();
+        hintEl.textContent = step.notesRequired && minChars && t.length > 0 && t.length < minChars
+          ? "A little more detail helps. Aim for at least " + minChars + " characters (" + (minChars - t.length) + " to go)." : "";
+        hintEl.classList.toggle("warn", !!hintEl.textContent);
+        refreshContinue(step);
+      };
+      document.querySelectorAll("[data-chip]").forEach(b => b.addEventListener("click", () => {
+        const label = b.dataset.chip;
+        const at = val.selected.indexOf(label);
+        if (at !== -1) val.selected.splice(at, 1);
+        else if (step.noneLabel && label === step.noneLabel) val.selected = [label];                       // "none" replaces everything else
+        else { val.selected = val.selected.filter(x => x !== step.noneLabel); val.selected.push(label); }  // picking anything removes "none"
+        paint();
+        if (otherEl && step.otherLabel && label === step.otherLabel && val.selected.includes(label)) otherEl.focus();
+      }));
+      if (otherEl) otherEl.addEventListener("input", () => { val.other = otherEl.value; refreshContinue(step); });
+      notesEl.addEventListener("input", () => { val.notes = notesEl.value; paint(); });
+      paint();
+    }
+
+    // item-details: one section per service, each with its own textareas. The boxes
+    // grow as someone types, and a short hint appears if an answer is too thin.
+    function bindDetails(step) {
+      const rows = answers[step.id];
+      const hintFor = (f, v) => {
+        const t = String(v || "").trim();
+        if (f.minChars && f.minChars > 3 && t.length > 0 && t.length < f.minChars) return { text: "A little more detail helps. Aim for at least " + f.minChars + " characters (" + (f.minChars - t.length) + " to go).", warn: true };
+        return { text: f.help || "", warn: false };
+      };
+      const grow = el => { el.style.height = "auto"; el.style.height = Math.min(el.scrollHeight + 2, 340) + "px"; };
+      const boxes = Array.from(document.querySelectorAll("[data-detail-row]"));
+      boxes.forEach(el => {
+        const i = parseInt(el.dataset.detailRow, 10), key = el.dataset.detailKey;
+        const f = detailFields(step, i).find(x => x.key === key);
+        const hint = document.querySelector('[data-hint-for="' + el.id + '"]');
+        const showHint = () => { const h = hintFor(f, rows[i][key]); hint.textContent = h.text; hint.classList.toggle("warn", h.warn); };
+        showHint();
+        grow(el);
+        el.addEventListener("input", () => { rows[i][key] = el.value; grow(el); showHint(); refreshContinue(step); });
+      });
+      const first = boxes.find(el => !el.value) || boxes[0];
+      if (first) first.focus();
     }
 
     // list: bulleted fields. Enter moves to the next field, and from the
@@ -1274,16 +1486,24 @@
     function addFiles(step, fileList) {
       const accept = step.accept || "image/*";
       const maxBytes = (step.maxSizeMB || 0) * 1024 * 1024;
+      const capBytes = (CONFIG.maxTotalMB || 0) * 1024 * 1024;
       const multiple = step.multiple !== false;
       const existing = multiple ? (answers[step.id] || []) : [];
+      // everything already picked in the other steps, plus what this step already holds
+      let running = totalFileBytes(step.id) + existing.reduce((sum, f) => sum + (f.size || 0), 0);
       const problems = [];
       const incoming = Array.from(fileList).filter(f => {
         if (!isAcceptedFile(f, accept)) { problems.push(f.name + " isn't a supported file type"); return false; }
         if (maxBytes && f.size > maxBytes) { problems.push(f.name + " is over " + step.maxSizeMB + " MB"); return false; }
-        return !existing.some(e => e.name === f.name && e.size === f.size && e.lastModified === f.lastModified);
+        if (existing.some(e => e.name === f.name && e.size === f.size && e.lastModified === f.lastModified)) return false;
+        if (capBytes && running + f.size > capBytes) { problems.push(f.name + " would go over the " + CONFIG.maxTotalMB + " MB upload limit for this form"); return false; }
+        running += f.size;
+        return true;
       });
       answers[step.id] = multiple ? existing.concat(incoming) : (incoming.length ? [incoming[0]] : (answers[step.id] || []));
-      fileError = problems.length ? "Couldn't add: " + problems.join("; ") + "." : "";
+      fileError = problems.length
+        ? "Couldn't add: " + problems.join("; ") + "." + (step.allowLink ? " Use the link box below for anything big." : "")
+        : "";
       renderStage();
     }
 
@@ -1325,7 +1545,11 @@
     function buildJsonPayload() {
       const out = {};
       ALL.forEach(step => {
-        if (!isQuestion(step) || step.type === "file") return;
+        if (step.type === "file") {
+          if (step.allowLink && isVisible(step)) out[step.id + "_link"] = normLink(answers[step.id + "__link"]) || null;
+          return;
+        }
+        if (!isQuestion(step)) return;
         if (!isVisible(step)) { out[step.id] = null; return; }
         let val = answers[step.id];
         if (val && val.skipped === true) { out[step.id] = { skipped: true }; return; }
@@ -1348,6 +1572,21 @@
           val = o;
         } else if (step.type === "radius-map") {
           val = { zip: val.zip, miles: val.miles, place: val.place || null, lat: val.lat == null ? null : val.lat, lon: val.lon == null ? null : val.lon };
+        } else if (step.type === "checklist-detail") {
+          const v = val || {};
+          const sel = (v.selected || []).slice();
+          const other = step.otherLabel && sel.includes(step.otherLabel) ? String(v.other || "").trim() : "";
+          val = {
+            selected: sel.map(x => (other && x === step.otherLabel) ? "Other: " + other : x),
+            other: other,
+            notes: String(v.notes || "").trim()
+          };
+        } else if (step.type === "item-details") {
+          val = (val || []).map((row, i) => {
+            const o = { item: String(row.item || "").trim() };
+            detailFields(step, i).forEach(f => { o[f.key] = String(row[f.key] || "").trim(); });
+            return o;
+          });
         }
         out[step.id] = (val === undefined) ? null : val;
       });
