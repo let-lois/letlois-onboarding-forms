@@ -9,11 +9,12 @@
      list        N required bulleted fields plus an "Add another" button
      rows        rows of inputs (price lists, tiers), can start pre-filled
                  from an earlier list answer
-     cards       pick one option from preview cards, with an optional
-                 "Something else" card that opens a text box
-     colors      brand color slots filled from a swatch palette, a code box,
-                 an eyedropper (Chrome and Edge only), or by clicking the
-                 client's uploaded logo
+     cards       pick one option from preview cards. An option marked
+                 other:true becomes a slim "Something else" row that opens a
+                 one-line box. Set shape:"phone" for tall phone previews.
+     colors      brand color slots filled from a color scale (drag in the
+                 square, slide the hue), quick colors, a code box, or by
+                 clicking the client's uploaded logo
      radius-map  ZIP code plus a radius slider drawn on a map
      file        now takes accept / multiple / maxSizeMB / dropText
 
@@ -96,6 +97,27 @@
   }
   function rgbToHex(r, g, b) {
     return "#" + [r, g, b].map(n => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0")).join("").toUpperCase();
+  }
+
+  // Color scale math. h is 0-360, s and v are 0-1.
+  function hsvToHex(h, s, v) {
+    const hn = ((h % 360) + 360) % 360;
+    const c = v * s, x = c * (1 - Math.abs((hn / 60) % 2 - 1)), m = v - c;
+    const rgb = [[c, x, 0], [x, c, 0], [0, c, x], [0, x, c], [x, 0, c], [c, 0, x]][Math.floor(hn / 60)];
+    return rgbToHex((rgb[0] + m) * 255, (rgb[1] + m) * 255, (rgb[2] + m) * 255);
+  }
+  function hexToHsv(hex) {
+    const c = hexToRgb(hex);
+    const R = c.r / 255, G = c.g / 255, B = c.b / 255;
+    const max = Math.max(R, G, B), d = max - Math.min(R, G, B);
+    let h = null;                       // grays have no hue
+    if (d !== 0) {
+      if (max === R) h = 60 * (((G - B) / d) % 6);
+      else if (max === G) h = 60 * ((B - R) / d + 2);
+      else h = 60 * ((R - G) / d + 4);
+      if (h < 0) h += 360;
+    }
+    return { h: h, s: max === 0 ? 0 : d / max, v: max };
   }
 
   // accept works like the HTML attribute: "image/*,.pdf,.ai"
@@ -505,24 +527,25 @@
 
       if (type === "cards") {
         const cur = answers[step.id] || {};
-        const chosen = step.options.find(o => o.id === cur.choice);
-        const otherOpt = step.options.find(o => o.other);
-        let html = '<div class="answer-area cards-grid cols-' + (step.columns || 3) + '" role="radiogroup">';
+        let html = '<div class="answer-area cards-grid cols-' + (step.columns || 3) + (step.shape ? " shape-" + step.shape : "") + '" role="radiogroup">';
         step.options.forEach(opt => {
           const sel = cur.choice === opt.id;
-          html += '<div class="card-wrap"><button type="button" class="card-opt' + (sel ? " selected" : "") + (opt.other ? " card-opt-other" : "") + '" data-card="' + escapeAttr(opt.id) + '" role="radio" aria-checked="' + sel + '">' +
-            (opt.preview ? '<span class="card-preview">' + opt.preview + "</span>" : "") +
-            '<span class="card-title">' + escapeHtml(opt.title) + "</span>" +
-            (opt.desc ? '<span class="card-desc">' + escapeHtml(opt.desc) + "</span>" : "") + "</button>" +
-            (opt.demoUrl ? '<a class="card-link" href="' + escapeAttr(opt.demoUrl) + '" target="_blank" rel="noopener">View demo &rarr;</a>' : "") +
-            "</div>";
+          const text = '<span class="card-text"><span class="card-title">' + escapeHtml(opt.title) + "</span>" +
+            (opt.desc ? '<span class="card-desc">' + escapeHtml(opt.desc) + "</span>" : "") + "</span>";
+          if (opt.other) {
+            // "Something else" is a slim one-line row, and a one-line box opens right under it
+            html += '<div class="card-wrap card-wrap-other"><button type="button" class="card-opt card-opt-other' + (sel ? " selected" : "") + '" data-card="' + escapeAttr(opt.id) + '" role="radio" aria-checked="' + sel + '">' +
+              '<span class="other-mark" aria-hidden="true"></span>' + text + "</button>" +
+              '<div class="card-other"' + (sel ? "" : " hidden") + '><input class="text-input" id="cardOther" type="text" maxlength="300" autocomplete="off" placeholder="' +
+              escapeAttr(opt.placeholder || "Tell us what you have in mind") + '" value="' + escapeAttr(cur.other || "") + '"></div></div>';
+          } else {
+            html += '<div class="card-wrap"><button type="button" class="card-opt' + (sel ? " selected" : "") + '" data-card="' + escapeAttr(opt.id) + '" role="radio" aria-checked="' + sel + '">' +
+              (opt.preview ? '<span class="card-preview">' + opt.preview + "</span>" : "") + text + "</button>" +
+              (opt.demoUrl ? '<a class="card-link" href="' + escapeAttr(opt.demoUrl) + '" target="_blank" rel="noopener">View demo &rarr;</a>' : "") +
+              "</div>";
+          }
         });
-        html += "</div>";
-        if (otherOpt) {
-          html += '<div class="card-other"' + (chosen && chosen.other ? "" : " hidden") + ">" +
-            '<textarea class="text-input" id="cardOther" rows="3" placeholder="' + escapeAttr(otherOpt.placeholder || "Tell us what you have in mind") + '">' + escapeHtml(cur.other || "") + "</textarea></div>";
-        }
-        return html;
+        return html + "</div>";
       }
 
       if (type === "colors") {
@@ -534,18 +557,23 @@
           html += '<div class="color-slot">' +
             '<button type="button" class="slot-main" data-slot="' + escapeAttr(s.id) + '" aria-label="' + escapeAttr(s.label) + ' color">' +
               '<span class="slot-swatch"' + (hex ? ' style="background:' + hex + '"' : "") + "></span>" +
-              '<span class="slot-meta"><span class="slot-label">' + escapeHtml(s.label) + (s.required ? "" : " (optional)") + "</span>" +
+              '<span class="slot-meta"><span class="slot-label">' + escapeHtml(s.label) + (s.required ? "" : ' <span class="slot-opt">optional</span>') + "</span>" +
               '<span class="slot-hex">' + (hex || "Pick a color") + "</span></span></button>" +
             (s.required ? "" : '<button type="button" class="slot-clear" data-clear="' + escapeAttr(s.id) + '" aria-label="Clear ' + escapeAttr(s.label) + '"' + (hex ? "" : " hidden") + ">&times;</button>") +
             "</div>";
         });
         html += "</div>" +
-          '<div class="palette" role="group" aria-label="Color palette">' +
-          PALETTE.map(h => '<button type="button" class="pal-swatch" data-hex="' + h + '" style="background:' + h + '" aria-label="' + h + '"></button>').join("") +
+          '<div class="scale-area">' +
+            '<div class="scale-box" id="scaleBox" tabindex="0" role="application" aria-label="Color scale. Drag, or use the arrow keys, to choose a shade."><div class="scale-handle" id="scaleHandle" hidden></div></div>' +
+            '<div class="scale-row"><span class="scale-preview" id="scalePreview"></span>' +
+              '<input type="range" class="hue-range" id="hueRange" min="0" max="360" step="1" value="210" aria-label="Color hue"></div>' +
           "</div>" +
-          '<div class="color-tools"><input class="text-input small hex-input" id="hexInput" type="text" maxlength="7" placeholder="#0F75BC" aria-label="Color code" autocomplete="off" spellcheck="false">' +
-          '<button type="button" class="btn-tool" id="eyeBtn">Eyedropper</button></div>';
-        if (hasLogo) html += '<div class="logo-pick" id="logoPick"><p class="logo-hint">Or click a color in your logo.</p></div>';
+          '<div class="hex-field"><label class="cap" for="hexInput">Or type a color code</label>' +
+            '<input class="text-input small hex-input" id="hexInput" type="text" maxlength="7" placeholder="#0F75BC" autocomplete="off" spellcheck="false"></div>' +
+          '<div class="quick-colors"><p class="cap">Quick colors</p><div class="palette" role="group" aria-label="Quick colors">' +
+            PALETTE.map(h => '<button type="button" class="pal-swatch" data-hex="' + h + '" style="background:' + h + '" aria-label="' + h + '"></button>').join("") +
+          "</div></div>";
+        if (hasLogo) html += '<div class="logo-pick" id="logoPick"><div class="logo-frame"></div><p class="logo-hint">Or tap a spot on your logo to use its color.</p></div>';
         return html + "</div>";
       }
 
@@ -938,17 +966,26 @@
         const opt = step.options.find(o => o.id === cur.choice);
         if (opt && opt.other && otherEl) otherEl.focus();
       }));
-      if (otherEl) otherEl.addEventListener("input", () => { cur.other = otherEl.value; refreshContinue(step); });
+      if (otherEl) {
+        otherEl.addEventListener("input", () => { cur.other = otherEl.value; refreshContinue(step); });
+        otherEl.addEventListener("keydown", e => { if (e.key === "Enter") { e.preventDefault(); tryAdvance(step); } });
+      }
     }
 
-    // colors: slots + palette + code box + eyedropper + click-your-logo
+    // colors: three slots, filled from the color scale, a code box, the quick
+    // colors, or by tapping the client's logo
     function bindColors(step) {
       const val = answers[step.id];
       const slots = step.slots;
       const hexEl = document.getElementById("hexInput");
+      const box = document.getElementById("scaleBox");
+      const handle = document.getElementById("scaleHandle");
+      const hueEl = document.getElementById("hueRange");
+      const previewEl = document.getElementById("scalePreview");
       let active = (slots.find(s => !normHex(val[s.id])) || slots[0]).id;
+      let hsv = { h: 210, s: 0.85, v: 0.85 };   // where the scale is sitting; follows the active slot's color
 
-      function refresh() {
+      function paintSlots() {
         slots.forEach(s => {
           const main = document.querySelector('[data-slot="' + s.id + '"]');
           if (!main) return;
@@ -959,23 +996,84 @@
           const clr = document.querySelector('[data-clear="' + s.id + '"]');
           if (clr) clr.hidden = !hex;
         });
-        refreshContinue(step);
       }
+      function showHue() {
+        box.style.backgroundColor = "hsl(" + Math.round(hsv.h) + ",100%,50%)";
+        hueEl.value = String(Math.round(hsv.h));
+      }
+      function placeHandle() {
+        handle.style.left = (hsv.s * 100) + "%";
+        handle.style.top = ((1 - hsv.v) * 100) + "%";
+      }
+      // moves the scale to the active slot's color (and hides the handle if that slot is empty)
+      function syncScale() {
+        const hex = normHex(val[active]);
+        if (hex) { const c = hexToHsv(hex); if (c.h !== null) hsv.h = c.h; hsv.s = c.s; hsv.v = c.v; }
+        showHue();
+        handle.hidden = !hex;
+        if (hex) placeHandle();
+        previewEl.style.background = hex || "";
+      }
+      function refresh() { paintSlots(); syncScale(); refreshContinue(step); }
+
+      // palette, code box and logo picks fill the active slot, then move to the next empty one
       function setColor(raw) {
         const hex = normHex(raw);
         if (!hex) return false;
         val[active] = hex;
-        // move on to the next empty slot, required ones first
         const next = slots.find(s => s.required && !normHex(val[s.id])) || slots.find(s => !normHex(val[s.id]));
         if (next) active = next.id;
         if (hexEl) { hexEl.value = ""; hexEl.classList.remove("bad"); }
         refresh();
         return true;
       }
+      // the color scale edits the active slot live and stays on it
+      function applyScale(h, s, v) {
+        hsv = { h: h, s: s, v: v };
+        val[active] = hsvToHex(h, s, v);
+        showHue(); placeHandle();
+        handle.hidden = false;
+        previewEl.style.background = val[active];
+        paintSlots();
+        refreshContinue(step);
+      }
 
       document.querySelectorAll("[data-slot]").forEach(b => b.addEventListener("click", () => { active = b.dataset.slot; refresh(); }));
       document.querySelectorAll("[data-clear]").forEach(b => b.addEventListener("click", () => { delete val[b.dataset.clear]; active = b.dataset.clear; refresh(); }));
       document.querySelectorAll("[data-hex]").forEach(b => b.addEventListener("click", () => setColor(b.dataset.hex)));
+
+      // the square: left to right is how vivid, bottom to top is how bright
+      let dragging = false;
+      const pick = e => {
+        const r = box.getBoundingClientRect();
+        const s = Math.min(1, Math.max(0, (e.clientX - r.left) / (r.width || 1)));
+        const v = 1 - Math.min(1, Math.max(0, (e.clientY - r.top) / (r.height || 1)));
+        applyScale(hsv.h, s, v);
+      };
+      box.addEventListener("pointerdown", e => {
+        dragging = true;
+        try { box.setPointerCapture(e.pointerId); } catch (err) { /* not needed everywhere */ }
+        e.preventDefault();
+        box.focus();
+        pick(e);
+      });
+      box.addEventListener("pointermove", e => { if (dragging) pick(e); });
+      const stopDrag = () => { dragging = false; };
+      box.addEventListener("pointerup", stopDrag);
+      box.addEventListener("pointercancel", stopDrag);
+      box.addEventListener("keydown", e => {
+        const amount = e.shiftKey ? 0.1 : 0.02;
+        let s = hsv.s, v = hsv.v;
+        if (e.key === "ArrowLeft") s -= amount;
+        else if (e.key === "ArrowRight") s += amount;
+        else if (e.key === "ArrowUp") v += amount;
+        else if (e.key === "ArrowDown") v -= amount;
+        else return;
+        e.preventDefault();
+        applyScale(hsv.h, Math.min(1, Math.max(0, s)), Math.min(1, Math.max(0, v)));
+      });
+      // the rainbow slider changes the hue and keeps the same vividness and brightness
+      hueEl.addEventListener("input", () => applyScale(parseInt(hueEl.value, 10), hsv.s, hsv.v));
 
       if (hexEl) {
         hexEl.addEventListener("input", () => {
@@ -987,31 +1085,21 @@
         hexEl.addEventListener("blur", commit);
       }
 
-      // The browser eyedropper only exists in Chrome and Edge, so hide the
-      // button everywhere else. The palette and code box always work.
-      const eyeBtn = document.getElementById("eyeBtn");
-      if (eyeBtn) {
-        if (!("EyeDropper" in global)) {
-          eyeBtn.hidden = true;
-        } else {
-          eyeBtn.addEventListener("click", async () => {
-            try { const r = await new global.EyeDropper().open(); setColor(r.sRGBHex); } catch (e) { /* cancelled */ }
-          });
-        }
-      }
-
       drawLogoPicker(step, setColor);
       refresh();
     }
 
-    // Shows the uploaded logo and lets the client click it to grab a color.
-    // Works in every browser (it reads the pixels from a canvas).
+    // Shows the uploaded logo, centered, and lets the client tap it to grab a
+    // color. A ring marks the spot they tapped. Works in every browser (it
+    // reads the pixels from a canvas).
     function drawLogoPicker(step, setColor) {
       const box = document.getElementById("logoPick");
       if (!box) return;
+      const frame = box.querySelector(".logo-frame");
       const hint = box.querySelector(".logo-hint");
       const file = (answers[step.logoStepId] || [])[0];
-      const fallback = "use the palette or the code box above.";
+      const base = "Or tap a spot on your logo to use its color.";
+      const fallback = "use the quick colors or the color scale above.";
       if (!file) { box.hidden = true; return; }
       const isImage = /^image\//.test(file.type || "") || /\.(png|jpe?g|gif|webp|svg)$/i.test(file.name || "");
       if (!isImage) { hint.textContent = "We can't preview that kind of file here, so " + fallback; return; }
@@ -1021,20 +1109,28 @@
       img.onload = () => {
         try {
           const nw = img.naturalWidth || 300, nh = img.naturalHeight || 150;
-          const scale = Math.min(320 / nw, 160 / nh);
+          const scale = Math.min(320 / nw, 180 / nh);
           const cw = Math.max(1, Math.round(nw * scale)), ch = Math.max(1, Math.round(nh * scale));
           const show = document.createElement("canvas");
           show.width = cw; show.height = ch; show.className = "logo-canvas";
-          show.setAttribute("aria-label", "Your logo. Click a color in it to use that color.");
+          show.setAttribute("aria-label", "Your logo. Tap a spot in it to use that color.");
           const off = document.createElement("canvas");   // same picture without the light backdrop, used for reading colors
           off.width = cw; off.height = ch;
           const sctx = show.getContext("2d");
           const octx = off.getContext("2d", { willReadFrequently: true });
-          sctx.fillStyle = "#F4F5F7"; sctx.fillRect(0, 0, cw, ch);
-          sctx.drawImage(img, 0, 0, cw, ch);
+          const redraw = (mx, my) => {
+            sctx.fillStyle = "#F4F5F7"; sctx.fillRect(0, 0, cw, ch);
+            sctx.drawImage(img, 0, 0, cw, ch);
+            if (mx == null) return;
+            try {   // a white ring with a dark edge, so it shows on any color
+              sctx.beginPath(); sctx.arc(mx, my, 11, 0, Math.PI * 2); sctx.lineWidth = 5; sctx.strokeStyle = "#0B1220"; sctx.stroke();
+              sctx.beginPath(); sctx.arc(mx, my, 11, 0, Math.PI * 2); sctx.lineWidth = 3; sctx.strokeStyle = "#FFFFFF"; sctx.stroke();
+            } catch (e) { /* the ring is only decoration */ }
+          };
+          redraw();
           octx.drawImage(img, 0, 0, cw, ch);
           URL.revokeObjectURL(url);
-          box.appendChild(show);
+          frame.appendChild(show);
           show.addEventListener("click", e => {
             try {
               const r = show.getBoundingClientRect();
@@ -1044,8 +1140,9 @@
               const d = octx.getImageData(x0, y0, Math.min(cw - x0, 5), Math.min(ch - y0, 5)).data;
               let R = 0, G = 0, B = 0, n = 0;     // average a small patch so one noisy pixel doesn't win
               for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200) { R += d[i]; G += d[i + 1]; B += d[i + 2]; n++; }
-              if (!n) { hint.textContent = "That spot is see-through. Click a solid part of the logo."; return; }
-              hint.textContent = "Or click a color in your logo.";
+              if (!n) { hint.textContent = "That spot is see-through. Tap a solid part of the logo."; return; }
+              hint.textContent = base;
+              redraw(x, y);
               setColor(rgbToHex(R / n, G / n, B / n));
             } catch (err) { hint.textContent = "We couldn't read colors from that file, so " + fallback; }
           });
