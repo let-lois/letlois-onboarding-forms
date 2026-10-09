@@ -8,14 +8,23 @@
 <!--
   Ads plan, Part 3 of 3 — Assets for Landing Pages & Meta Ads.
   This page only defines CONFIG. All rendering/logic lives in
-  /shared/onboarding-engine.js so every part of every plan behaves the
+  /shared/onboarding-engine-v2.js so every part of every plan behaves the
   same way. Edit the "steps" array below to change questions.
+
+  Every question here is required. The only optional thing is the fourth
+  service on the services question.
+
+  maxTotalMB is the most a client can upload in one go, across every upload
+  question combined. Each upload question also has a "paste a link" box so a
+  required upload is never a dead end. Raise maxTotalMB only after testing a
+  large submission end to end.
 -->
 
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../shared/onboarding.css">
+<link rel="stylesheet" href="../../shared/onboarding-extras.css">
 </head>
 <body>
 
@@ -26,18 +35,19 @@
 </div>
 <span class="visually-hidden" aria-live="polite" id="liveRegion"></span>
 
-<script src="../../shared/onboarding-engine.js"></script>
+<script src="../../shared/onboarding-engine-v2.js"></script>
 <script>
   OnboardingForm.init({
     businessName: "LetLois",
     partLabel: "Onboarding Form · Part 3",
     apiEndpoint: "/api/submit-assets",
     fallbackEmail: "hello@letlois.com",
+    maxTotalMB: 60,
 
     steps: [
       { id: "welcome", type: "welcome",
         title: "Your Assets.",
-        subtitle: "The photos, videos, and details we'll use to build your landing pages and ads. About 3 minutes.",
+        subtitle: "The details, photos, and videos we'll use to build your landing pages and ads. This is the part that makes your pages great, so the more you give us, the better they'll turn out. About 10 minutes.",
         cta: "Start" },
 
       { id: "business_name", type: "text", required: true,
@@ -45,21 +55,56 @@
         placeholder: "Acme",
         context: "We'll use this to match your assets to the answers you already gave us in Parts 1 and 2." },
 
-      { id: "top_3_services", type: "textarea", required: true,
-        question: "What are your top 3 services?",
-        placeholder: "The ones you'd most want featured in an ad or on a landing page." },
+      { id: "top_3_services", type: "list", required: true, minItems: 3, maxItems: 4,
+        question: "What are the top three services you market for?",
+        subtitle: "These are the services you most want new customers for. Want a fourth? You can add one, and we'll ask you why on the next question.",
+        placeholders: ["First service", "Second service", "Third service"],
+        placeholder: "Fourth service (optional)",
+        itemLabel: "Service", addLabel: "Add a fourth service (optional)",
+        context: "We build a dedicated landing page on your website for each of these services, so they become the pages that bring in your best leads. We start with three. If you'd like us to build a fourth, add it and tell us why it matters to your business." },
 
-      { id: "offer_details", type: "textarea", required: true,
-        question: "What are the offer details?",
-        placeholder: "Any promotion, discount, or specific offer we should highlight." },
+      { id: "offer_details", type: "item-details", required: true, itemsFrom: "top_3_services",
+        question: "Tell us about the offer for each service.",
+        subtitle: "Go into detail. The more we know, the better we can write each landing page.",
+        context: "Each service gets its own landing page, so we need to know what you're offering and what you're trying to achieve with it, plus any discount or incentive you want to run.",
+        fields: [
+          { key: "offer", minChars: 30, help: "A few sentences is perfect.",
+            label: "What does your {item} offer look like, and what are you trying to do with it?",
+            placeholder: "Describe what's included, who it's for, and your goal. Example: Full roof replacements for homeowners. We want more large jobs in our service area." },
+          { key: "promo", minChars: 3, help: "Required. If there's nothing right now, write \"none yet\".",
+            label: "Any discounts, promotions, or incentives you want to run on {item}?",
+            placeholder: "Example: 10% off for new customers, a free inspection, or financing available." }
+        ],
+        extraFromIndex: 3,
+        extraFields: [
+          { key: "why", minChars: 15,
+            label: "Why do you want a landing page for {item}?",
+            placeholder: "Tell us why this service matters to your business." }
+        ] },
 
-      { id: "before_after_photos", type: "file", required: false,
-        question: "Do you have any before and after photos?",
-        subtitle: "Optional — but these tend to perform really well in ads." },
+      { id: "before_after_photos", type: "file", required: true, multiple: true, maxSizeMB: 25, allowLink: true,
+        accept: "image/*,.heic,.heif",
+        question: "Upload before and after photos of your work.",
+        subtitle: "Show us the jobs you're proudest of. We'll feature your best work on {{top_3_services|your services}} on your website.",
+        dropText: "Drop your photos here, or click to browse",
+        linkLabel: "Lots of photos? Paste a link to a folder instead (Google Drive, Dropbox, or WeTransfer).",
+        context: "Real photos of your own work build trust faster than anything else on a landing page. Send a mix of before and after shots, finished jobs, and work in progress. Phone photos are perfect." },
 
-      { id: "videos", type: "file", required: false,
-        question: "Any videos we can use?",
-        subtitle: "Optional — testimonials, job walkthroughs, whatever you've got." },
+      { id: "team_photos", type: "file", required: true, multiple: true, maxSizeMB: 25, allowLink: true,
+        accept: "image/*,.heic,.heif",
+        question: "Upload photos of your team.",
+        subtitle: "Headshots, a crew photo, your trucks, or your shop or office all work great.",
+        dropText: "Drop your team photos here, or click to browse",
+        linkLabel: "Lots of photos? Paste a link to a folder instead (Google Drive, Dropbox, or WeTransfer).",
+        context: "People hire people they can picture at their door. Real photos of you and your crew make your website feel local and trustworthy, and they go on your About and contact sections." },
+
+      { id: "videos", type: "file", required: true, multiple: true, maxSizeMB: 60, allowLink: true,
+        accept: "video/*,.mp4,.mov,.m4v,.webm,.avi",
+        question: "Upload any and all videos you have.",
+        subtitle: "Jobs in progress, finished projects, walk-throughs of your work, your office or shop, your crew and trucks, or customer testimonials. Phone videos are perfect.",
+        dropText: "Drop your videos here, or click to browse",
+        linkLabel: "Videos too big to upload? Paste a link instead (Google Drive, Dropbox, or WeTransfer).",
+        context: "Video turns visitors into customers. We use your clips on your landing pages and in your ads, and raw phone footage works great. If your videos are too large to upload here, paste a link to them below." },
 
       { id: "end", type: "end",
         title: "Part 3 complete.",
