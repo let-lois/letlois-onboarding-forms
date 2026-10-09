@@ -63,6 +63,11 @@
      - each "file" step's uploads go under a field named after the step id
      - expects JSON back: { ok: true, ... } or { ok: false, error }
      - if location.protocol is "file:", runs in DEMO MODE: nothing is sent.
+     - when the form is shown inside an iframe (the walkthrough site), it tells
+       the page around it how the submit is going with
+       window.parent.postMessage({ source: "letlois-onboarding", type }, "*"),
+       where type is "busy" (uploading or filing), "done" or "error". The
+       walkthrough site uses this to stop someone from leaving mid-upload.
    ========================================================================== */
 
 (function (global) {
@@ -210,6 +215,13 @@
     let pendingFocus = null;      // CSS selector to focus after the next render
     let fileError = "";           // message shown under a file dropzone
     let listNotice = "";          // message shown under a list's "copy earlier answers" button
+
+    // Lets the page around us (the walkthrough site, when we're in an iframe) know how the submit is going.
+    function tellParent(type) {
+      try {
+        if (global.parent && global.parent !== global) global.parent.postMessage({ source: "letlois-onboarding", type: type }, "*");
+      } catch (e) { /* not embedded, nothing to tell */ }
+    }
 
     const cardEl = document.getElementById("card");
     const liveRegion = document.getElementById("liveRegion");
@@ -1870,6 +1882,7 @@
       const payload = buildJsonPayload();
       const fileSteps = ALL.filter(s => s.type === "file" && isVisible(s));
 
+      tellParent("busy");
       try {
         if (DEMO) {
           console.warn("[OnboardingForm] DEMO MODE (opened as a local file) \u2014 nothing was sent. Payload that would have been submitted:", payload, fileSteps.map(s => (answers[s.id] || []).map(f => f.name)));
@@ -1886,9 +1899,11 @@
           if (!res.ok) throw new Error("Server responded with status " + res.status);
         }
         submitState = "success";
+        tellParent("done");
       } catch (err) {
         console.error("[OnboardingForm] Submission failed:", err);
         submitState = "error";
+        tellParent("error");
       }
       renderStage();
     }
