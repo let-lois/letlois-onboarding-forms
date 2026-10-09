@@ -26,6 +26,12 @@
                  (itemsFrom), each with textareas (fields). Items from
                  extraFromIndex on also get extraFields. {item} inside a
                  label is replaced with the item's name.
+     list options: itemDetails:true adds an optional, collapsed "Add details"
+                 box under every item (sent as <id>_details, one entry per
+                 item). copyFrom:{url,label,businessFrom} adds a button that
+                 fills the list from the same business's earlier answers
+                 (GET url?business=...). checklist-detail option noNotes:true
+                 hides the notes box.
      file        takes accept / multiple / maxSizeMB / dropText, and
                  allowLink:true adds a "paste a link instead" box that also
                  satisfies a required file step. CONFIG.maxTotalMB caps the
@@ -203,6 +209,7 @@
     let activeMap = null;         // the Leaflet map on the current stage, if any
     let pendingFocus = null;      // CSS selector to focus after the next render
     let fileError = "";           // message shown under a file dropzone
+    let listNotice = "";          // message shown under a list's "copy earlier answers" button
 
     const cardEl = document.getElementById("card");
     const liveRegion = document.getElementById("liveRegion");
@@ -283,6 +290,10 @@
         const items = Array.isArray(answers[step.id]) ? answers[step.id] : [];
         while (items.length < min) items.push("");
         answers[step.id] = items;
+        if (step.itemDetails) {
+          if (!Array.isArray(answers[step.id + "__details"])) answers[step.id + "__details"] = [];
+          if (!Array.isArray(answers[step.id + "__open"])) answers[step.id + "__open"] = [];
+        }
       } else if (step.type === "rows") {
         syncRows(step);
       } else if (step.type === "colors") {
@@ -413,7 +424,7 @@
           const sel = v.selected || [];
           if (step.required && sel.length === 0) return false;
           if (step.otherLabel && sel.includes(step.otherLabel) && !String(v.other || "").trim()) return false;
-          if (step.notesRequired && String(v.notes || "").trim().length < (step.notesMinChars || 1)) return false;
+          if (!step.noNotes && step.notesRequired && String(v.notes || "").trim().length < (step.notesMinChars || 1)) return false;
           return true;
         }
         case "item-details": {
@@ -605,6 +616,7 @@
             escapeHtml(step.otherPrompt || "Which one?") + '</label><input class="text-input" id="checklistOther" type="text" maxlength="120" autocomplete="off" placeholder="' +
             escapeAttr(step.otherPlaceholder || "Type it here") + '" value="' + escapeAttr(val.other || "") + '"></div>';
         }
+        if (step.noNotes) return html + "</div>";
         html += '<div class="checklist-notes"><label class="notes-label" id="notesLabel" for="notesInput">' +
           escapeHtml(noneOn && step.noneNotesLabel ? step.noneNotesLabel : (step.notesLabel || "Anything else we should know?")) + "</label>" +
           '<textarea class="text-input" id="notesInput" rows="3" placeholder="' +
@@ -623,7 +635,7 @@
             (i >= extraFrom ? '<span class="detail-tag">Extra page</span>' : "") + "</h2>";
           detailFields(step, i).forEach(f => {
             const id = "detail-" + i + "-" + f.key;
-            html += '<div class="detail-field"><label class="detail-label" for="' + id + '">' + escapeHtml(subItem(f.label, row.item)) + "</label>" +
+            html += '<div class="detail-field"><label class="detail-label" for="' + id + '">' + escapeHtml(subItem(f.label, row.item)) + '<span class="req-tag">Required</span></label>' +
               '<textarea class="text-input detail-input" id="' + id + '" data-detail-row="' + i + '" data-detail-key="' + escapeAttr(f.key) + '" rows="' + (f.rows || 3) + '" placeholder="' +
               escapeAttr(subItem(f.placeholder || "", row.item)) + '">' + escapeHtml(row[f.key] || "") + "</textarea>" +
               '<p class="detail-hint" data-hint-for="' + id + '"></p></div>';
@@ -646,13 +658,26 @@
       if (type === "list") {
         const items = answers[step.id];
         const min = step.minItems || 1;
+        const det = answers[step.id + "__details"] || [];
+        const open = answers[step.id + "__open"] || [];
         let html = '<div class="answer-area list-area">';
+        if (step.copyFrom) {
+          html += '<div class="list-copy"><button type="button" class="btn-copy-list" id="copyListBtn">' + escapeHtml(step.copyFrom.label || "Use my earlier answers") + "</button>" +
+            '<p class="list-copy-note" id="copyListNote" role="status">' + escapeHtml(listNotice) + "</p></div>";
+        }
         items.forEach((val, i) => {
           const ph = (step.placeholders && step.placeholders[i]) || step.placeholder || "";
-          html += '<div class="list-row"><span class="bullet" aria-hidden="true">&bull;</span>' +
+          const row = '<div class="list-row"><span class="bullet" aria-hidden="true">&bull;</span>' +
             '<input class="text-input" type="text" data-list-index="' + i + '" placeholder="' + escapeAttr(ph) + '" value="' + escapeAttr(val) + '" ' +
             'aria-label="' + escapeAttr((step.itemLabel || "Item") + " " + (i + 1)) + '" autocomplete="off">' +
             (i >= min ? '<button type="button" class="btn-remove-row" data-list-remove="' + i + '" aria-label="Remove">&times;</button>' : "") +
+            "</div>";
+          if (!step.itemDetails) { html += row; return; }
+          const isOpen = !!String(det[i] || "").trim() || !!open[i];
+          html += '<div class="list-item">' + row +
+            '<button type="button" class="btn-detail-toggle" data-detail-toggle="' + i + '" aria-expanded="' + isOpen + '">' +
+              escapeHtml(isOpen ? "\u2212 Hide details" : "+ " + (step.detailsLabel || "Add details (optional)")) + "</button>" +
+            '<textarea class="text-input list-detail-input" data-detail-index="' + i + '" rows="3" placeholder="' + escapeAttr(step.detailsPlaceholder || "Optional details") + '"' + (isOpen ? "" : " hidden") + ">" + escapeHtml(det[i] || "") + "</textarea>" +
             "</div>";
         });
         if (!step.maxItems || items.length < step.maxItems) {
@@ -1077,12 +1102,14 @@
           b.setAttribute("aria-pressed", on ? "true" : "false");
         });
         if (otherWrap) otherWrap.hidden = !(step.otherLabel && val.selected.includes(step.otherLabel));
-        labelEl.textContent = noneOn() && step.noneNotesLabel ? step.noneNotesLabel : (step.notesLabel || "Anything else we should know?");
-        notesEl.placeholder = noneOn() && step.noneNotesPlaceholder ? step.noneNotesPlaceholder : (step.notesPlaceholder || "");
-        const t = String(val.notes || "").trim();
-        hintEl.textContent = step.notesRequired && minChars && t.length > 0 && t.length < minChars
-          ? "A little more detail helps. Aim for at least " + minChars + " characters (" + (minChars - t.length) + " to go)." : "";
-        hintEl.classList.toggle("warn", !!hintEl.textContent);
+        if (notesEl && labelEl && hintEl) {
+          labelEl.textContent = noneOn() && step.noneNotesLabel ? step.noneNotesLabel : (step.notesLabel || "Anything else we should know?");
+          notesEl.placeholder = noneOn() && step.noneNotesPlaceholder ? step.noneNotesPlaceholder : (step.notesPlaceholder || "");
+          const t = String(val.notes || "").trim();
+          hintEl.textContent = step.notesRequired && minChars && t.length > 0 && t.length < minChars
+            ? "A little more detail helps. Aim for at least " + minChars + " characters (" + (minChars - t.length) + " to go)." : "";
+          hintEl.classList.toggle("warn", !!hintEl.textContent);
+        }
         refreshContinue(step);
       };
       document.querySelectorAll("[data-chip]").forEach(b => b.addEventListener("click", () => {
@@ -1095,7 +1122,7 @@
         if (otherEl && step.otherLabel && label === step.otherLabel && val.selected.includes(label)) otherEl.focus();
       }));
       if (otherEl) otherEl.addEventListener("input", () => { val.other = otherEl.value; refreshContinue(step); });
-      notesEl.addEventListener("input", () => { val.notes = notesEl.value; paint(); });
+      if (notesEl) notesEl.addEventListener("input", () => { val.notes = notesEl.value; paint(); });
       paint();
     }
 
@@ -1127,6 +1154,8 @@
     // last field it continues (if everything required is filled in).
     function bindList(step) {
       const items = answers[step.id];
+      const det = answers[step.id + "__details"] || [];
+      const open = answers[step.id + "__open"] || [];
       const inputs = () => Array.from(document.querySelectorAll("[data-list-index]"));
       inputs().forEach(inp => {
         const i = parseInt(inp.dataset.listIndex, 10);
@@ -1138,15 +1167,63 @@
           if (next) next.focus(); else tryAdvance(step);
         });
       });
+      // optional details under each item: tap to open, typing is saved as you go
+      document.querySelectorAll("[data-detail-toggle]").forEach(btn => btn.addEventListener("click", () => {
+        const i = parseInt(btn.dataset.detailToggle, 10);
+        const box = document.querySelector('[data-detail-index="' + i + '"]');
+        if (!box) return;
+        const show = box.hidden;
+        box.hidden = !show;
+        open[i] = show;
+        btn.setAttribute("aria-expanded", show ? "true" : "false");
+        btn.textContent = show ? "\u2212 Hide details" : "+ " + (step.detailsLabel || "Add details (optional)");
+        if (show) box.focus();
+      }));
+      document.querySelectorAll("[data-detail-index]").forEach(box => box.addEventListener("input", () => {
+        det[parseInt(box.dataset.detailIndex, 10)] = box.value;
+      }));
       document.querySelectorAll("[data-list-remove]").forEach(btn => btn.addEventListener("click", () => {
-        items.splice(parseInt(btn.dataset.listRemove, 10), 1);
+        const at = parseInt(btn.dataset.listRemove, 10);
+        items.splice(at, 1);
+        if (step.itemDetails) { det.splice(at, 1); open.splice(at, 1); }
         renderStage();
       }));
       const add = document.getElementById("addListBtn");
       if (add) add.addEventListener("click", () => {
         items.push("");
+        if (step.itemDetails) { det.push(""); open.push(false); }
         pendingFocus = '[data-list-index="' + (items.length - 1) + '"]';
         renderStage();
+      });
+      // "use my earlier answers": fills the list from this business's saved answers
+      const copyBtn = document.getElementById("copyListBtn");
+      if (copyBtn) copyBtn.addEventListener("click", async () => {
+        const cfg = step.copyFrom;
+        const biz = String(answers[cfg.businessFrom || "business_name"] || "").trim();
+        const noteEl = document.getElementById("copyListNote");
+        const say = t => { listNotice = t; if (noteEl) noteEl.textContent = t; };
+        if (!biz) { say("Fill in your business name on the earlier question first."); return; }
+        copyBtn.disabled = true;
+        say("Looking for your earlier answers...");
+        try {
+          const res = await fetch(cfg.url + "?business=" + encodeURIComponent(biz));
+          const d = await res.json();
+          const found = d && d.ok && Array.isArray(d.services) ? d.services.filter(Boolean) : [];
+          if (!found.length) {
+            copyBtn.disabled = false;
+            say("We couldn't find earlier answers under that business name. Check that it matches Part 2, or type your services below.");
+            return;
+          }
+          const max = step.maxItems || found.length;
+          const next = found.slice(0, max);
+          while (next.length < (step.minItems || 1)) next.push("");
+          items.splice(0, items.length, ...next);
+          listNotice = found.length > max ? "We copied the first " + max + " services. You can change them below." : "Copied from your earlier answers. You can change them below.";
+          renderStage();
+        } catch (e) {
+          copyBtn.disabled = false;
+          say("Something went wrong. Please type your services below.");
+        }
       });
       const first = inputs().find(el => !el.value) || inputs()[0];
       if (first) first.focus();
@@ -1547,6 +1624,7 @@
       setTimeout(() => {
         currentIndex = newIndex;
         fileError = "";
+        listNotice = "";
         renderStage();
         const newStageEl = cardEl.querySelector(".stage");
         if (newStageEl) {
@@ -1582,7 +1660,15 @@
         else if (step.type === "repeater") {
           val = (val || []).filter(row => Object.values(row).some(v => v && String(v).trim().length > 0));
         } else if (step.type === "list") {
-          val = (val || []).map(s => String(s || "").trim()).filter(Boolean);
+          const raw = (val || []).map(s => String(s || "").trim());
+          if (step.itemDetails) {
+            // details stay lined up with their item, even when blank rows are dropped
+            const det = answers[step.id + "__details"] || [];
+            const notes = [];
+            raw.forEach((name, i) => { if (name) notes.push(String(det[i] || "").trim()); });
+            out[step.id + "_details"] = notes;
+          }
+          val = raw.filter(Boolean);
         } else if (step.type === "rows") {
           val = (val || [])
             .map(row => { const o = {}; step.columns.forEach(c => { o[c.key] = String(row[c.key] || "").trim(); }); return o; })
