@@ -8,7 +8,7 @@
 <!--
   Ads plan, Part 1 of 3 — A2P / SMS Compliance.
   This page only defines CONFIG. All rendering/logic lives in
-  /shared/onboarding-engine.js so every part of every plan behaves the
+  /shared/onboarding-engine-v2.js so every part of every plan behaves the
   same way. Edit the "steps" array below to change questions.
 -->
 
@@ -16,6 +16,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="../../shared/onboarding.css">
+<link rel="stylesheet" href="../../shared/onboarding-extras.css">
 </head>
 <body>
 
@@ -26,7 +27,7 @@
 </div>
 <span class="visually-hidden" aria-live="polite" id="liveRegion"></span>
 
-<script src="../../shared/onboarding-engine.js"></script>
+<script src="../../shared/onboarding-engine-v2.js"></script>
 <script>
   OnboardingForm.init({
     businessName: "LetLois",                 // EDIT ME
@@ -37,7 +38,7 @@
     steps: [
       { id: "welcome", type: "welcome",
         title: "General Business Information.",
-        subtitle: "We're going to gather some basic-level business information so we can store and house this on our end when we go to set up your business texting. About 2 minutes.",
+        subtitle: "We're going to gather some basic-level business information so we can store and house this on our end when we go to set up your business texting. About 3 minutes.",
         cta: "Start" },
 
       { id: "business_name", type: "text", required: true,
@@ -85,10 +86,20 @@
         mask: "(XXX) XXX-XXXX",
         context: "This number has to be able to receive text messages — it's how we'll send you OTP codes." },
 
-      { id: "software_access", type: "text", required: true,
-        question: "What CRM or other software do you use to run your marketing or client list?",
-        placeholder: "e.g. HubSpot, Salesforce, Mailchimp, a spreadsheet — whatever you're using today",
-        context: "This is so our team can get access to any systems you currently use to run your marketing and/or client list, giving us full scope of what you're working with. Please add info@letlois.com as a user on anything you list here." },
+      { id: "software_access", type: "checklist-detail", required: true,
+        question: "Which software do you use to run your business today?",
+        subtitle: "Select everything you use for leads, customers, scheduling, estimates or marketing.",
+        context: "Our team needs access to anything you already use to run your marketing or customer list, so we can see the full picture of what you're working with and connect it to your ads. Please add info@letlois.com as a user on everything you select here.",
+        options: ["Jobber", "ServiceTitan", "Housecall Pro", "JobNimbus", "AccuLynx", "Buildertrend", "Service Fusion", "FieldEdge", "Workiz", "Procore", "GoHighLevel", "HubSpot", "Salesforce", "Podium", "QuickBooks", "Mailchimp", "Excel or Google Sheets"],
+        otherLabel: "Something else",
+        otherPrompt: "Which software is it?",
+        otherPlaceholder: "Type the name here",
+        noneLabel: "We don't use any of these yet",
+        notesLabel: "Who manages it, and how do we get access?",
+        notesPlaceholder: "Give us the name and email of the person who runs it, plus anything we should know. Example: Mike (owner) manages Jobber, mike@acme.com. We'll add info@letlois.com as a user.",
+        noneNotesLabel: "How do you keep track of leads and customers today?",
+        noneNotesPlaceholder: "Example: a spreadsheet, texts and phone contacts, paper estimates, or your accountant's records.",
+        notesRequired: true, notesMinChars: 15 },
 
       { id: "team_members", type: "repeater",
         question: "Who else is on your team that will be involved with the work we're about to do together?",
