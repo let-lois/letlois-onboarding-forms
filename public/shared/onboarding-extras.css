@@ -16,6 +16,15 @@
 }
 [hidden] { display: none !important; }
 
+/* ---------- page container ----------
+   The shared stylesheet centers the form with align-items:center inside a body locked to the
+   screen's height. When a step is taller than the screen, the extra height spills off the TOP of
+   the page, where it can never be scrolled to. margin:auto centers the form when it fits and lets
+   the page scroll normally from the very top when it doesn't. */
+html, body { height: auto; }
+body { align-items: flex-start; justify-content: flex-start; min-height: 100vh; min-height: 100dvh; }
+.shell { margin: auto; }
+
 /* ---------- bulleted list (services) ---------- */
 .list-area { display: flex; flex-direction: column; gap: 12px; }
 .list-row { display: flex; align-items: center; gap: 12px; }
@@ -115,14 +124,14 @@
 .slot-swatch { flex: none; width: 34px; height: 34px; border-radius: 50%; border: 1px solid var(--x-line-strong); background: #22252B; }
 .slot-meta { display: flex; flex-direction: column; min-width: 0; }
 .slot-label { font-size: 12px; color: var(--x-muted); }
-.slot-hex { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 14px; }
+.slot-hex { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 14px; white-space: nowrap; }
 .slot-clear {
   position: absolute; top: 6px; right: 6px; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 50%;
   background: rgba(255, 255, 255, 0.08); color: var(--x-text); font-size: 14px; line-height: 1; cursor: pointer;
 }
 @media (max-width: 520px) {
   .color-slots { gap: 8px; }
-  .slot-main { flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; padding: 9px 8px; }
+  .slot-main { flex-direction: column; align-items: flex-start; justify-content: flex-start; gap: 4px; padding: 9px 8px; }
   .slot-swatch { width: 24px; height: 24px; }
   .slot-label { font-size: 11.5px; }
   .slot-hex { font-size: 12px; }
@@ -132,8 +141,9 @@
    Phones show one panel at a time, chosen with the tabs. */
 .method-tabs { display: none; gap: 4px; padding: 4px; background: var(--x-panel); border: 1px solid var(--x-line); border-radius: 12px; }
 .method-tab {
-  flex: 1; min-width: 0; padding: 11px 6px; border: 0; border-radius: 9px; background: transparent;
-  font: inherit; font-size: 13px; font-weight: 600; color: var(--x-muted); cursor: pointer;
+  flex: 1; min-width: 0; padding: 11px 4px; border: 0; border-radius: 9px; background: transparent;
+  font: inherit; font-size: 12.5px; font-weight: 600; color: var(--x-muted); cursor: pointer;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .method-tab.active { background: rgba(71, 183, 232, 0.16); color: var(--x-text); box-shadow: 0 0 0 1px var(--x-accent) inset; }
 .method-tab:focus-visible { outline: 2px solid var(--x-accent); outline-offset: 2px; }
