@@ -1,54 +1,48 @@
 /**
  * Handles POST /api/submit-assets — called from src/index.js.
  *
- * Expects multipart/form-data with:
- *   - "data": JSON string of the answers from public/ads/assets/index.html
- *       business_name           text
- *       top_3_services          list of services (the 4th is an optional extra)
- *       offer_details           one { item, offer, promo, why? } per service
- *       before_after_photos_link, team_photos_link, videos_link
- *                               optional links the client pasted instead of uploading
- *   - "before_after_photos": uploaded image files
- *   - "team_photos":         uploaded image files
- *   - "videos":              uploaded video files
+ * The files are NOT sent here. The form uploads them first, in pieces, to the
+ * private R2 bucket (see src/api/upload.js). This handler then receives a small
+ * JSON message with the answers plus the list of files that were uploaded:
+ *
+ *   business_name, top_3_services, offer_details
+ *   before_after_photos_link, team_photos_link, videos_link   (links pasted instead of uploading)
+ *   uploaded_files: { before_after_photos: [{key,name,size}], team_photos: [...], videos: [...] }
  *
  * On each request this:
- *   1. Gets a Google access token for the service account (see src/lib/drive.js).
- *   2. Finds this client's folder in the Shared Drive ("<Business Name> — Assets"),
- *      or creates it, and uploads every file into it. Files are renamed with a
- *      prefix ("Before-After - ", "Team - ", "Video - ") so they sort and read
- *      clearly. A second submission from the same business reuses the folder.
- *      Any links the client pasted instead of uploading are saved in the same
- *      folder as a small text file, so nothing lives only in the Sheet.
- *   3. Inserts one row into the assets_submissions D1 table (env.DB).
- *   4. Pushes a row to Google Sheets (env.SHEETS_WEBHOOK_URL), matched by
+ *   1. Saves any pasted links in the client's R2 folder as a small text file,
+ *      so nothing lives only in the Sheet.
+ *   2. Inserts one row into the assets_submissions D1 table (env.DB). The
+ *      drive_folder_url column now holds the link to the client's file browser.
+ *   3. Pushes a row to Google Sheets (env.SHEETS_WEBHOOK_URL), matched by
  *      business name the same way Parts 1 and 2 are.
  *
- * The D1 table and the Sheet columns are unchanged. Team photos are counted
- * with the before and after photos in photos_uploaded_count.
+ * The D1 table and the Sheet columns are unchanged.
  *
  * Required bindings/vars (see wrangler.toml):
- *   env.DB                               — D1 database binding
- *   env.SHEETS_WEBHOOK_URL                — Apps Script Web App URL
- *   env.GOOGLE_DRIVE_PARENT_FOLDER_ID     — the Shared Drive's own ID
- *   env.GOOGLE_SERVICE_ACCOUNT_KEY_JSON   — secret: service account JSON key
+ *   env.DB                      — D1 database binding
+ *   env.UPLOADS                 — R2 bucket binding
+ *   env.SHEETS_WEBHOOK_URL      — Apps Script Web App URL
  */
 
-import { getGoogleAccessToken, findOrCreateDriveFolder, uploadFileToDrive } from "../lib/drive.js";
+import { UPLOAD_FIELDS, slugify, keyBelongsTo } from "../lib/upload-paths.js";
 
 export async function handleSubmitAssets(request, env) {
   try {
-    const form = await request.formData();
-    const dataRaw = form.get("data");
-    if (!dataRaw) return json({ ok: false, error: "Missing form data" }, 400);
-    const data = JSON.parse(dataRaw);
+    const data = await request.json();
     const businessName = String(data.business_name || "").trim();
     if (!businessName) return json({ ok: false, error: "Missing business name" }, 400);
 
-    const filesOf = name => form.getAll(name).filter(f => f && typeof f === "object" && "arrayBuffer" in f && f.size > 0);
-    const beforeAfter = filesOf("before_after_photos");
-    const team = filesOf("team_photos");
-    const videos = filesOf("videos");
+    // Only keep uploaded files that sit inside this business's own folder.
+    const uploaded = {};
+    UPLOAD_FIELDS.forEach(field => {
+      const list = data.uploaded_files && Array.isArray(data.uploaded_files[field]) ? data.uploaded_files[field] : [];
+      uploaded[field] = list.filter(f => f && keyBelongsTo(businessName, f.key));
+    });
+    const beforeAfter = uploaded.before_after_photos;
+    const team = uploaded.team_photos;
+    const videos = uploaded.videos;
+    const fileCount = beforeAfter.length + team.length + videos.length;
 
     const links = {
       beforeAfter: cleanLink(data.before_after_photos_link),
@@ -58,23 +52,22 @@ export async function handleSubmitAssets(request, env) {
 
     const id = crypto.randomUUID();
     const submittedAt = new Date().toISOString();
-
-    // Reuses this client's folder if one already exists, otherwise creates it.
-    const accessToken = await getGoogleAccessToken(env);
-    const folder = await findOrCreateDriveFolder(accessToken, env.GOOGLE_DRIVE_PARENT_FOLDER_ID, businessName + " — Assets");
-    const driveFolderUrl = folder.webViewLink || "";
-
-    for (const f of beforeAfter) await uploadFileToDrive(accessToken, folder.id, f, "Before-After - " + (f.name || "photo"));
-    for (const f of team) await uploadFileToDrive(accessToken, folder.id, f, "Team - " + (f.name || "photo"));
-    for (const f of videos) await uploadFileToDrive(accessToken, folder.id, f, "Video - " + (f.name || "video"));
+    const slug = slugify(businessName);
+    const folderUrl = fileCount > 0 || hasLinks(links)
+      ? new URL(request.url).origin + "/admin/files/?prefix=" + encodeURIComponent(slug + "/")
+      : "";
 
     const linkLines = [];
     if (links.beforeAfter) linkLines.push("Before and after photos: " + links.beforeAfter);
     if (links.team) linkLines.push("Team photos: " + links.team);
     if (links.videos) linkLines.push("Videos: " + links.videos);
     if (linkLines.length) {
-      const note = new Blob(["Links " + businessName + " sent instead of uploading files (" + submittedAt + ")\n\n" + linkLines.join("\n") + "\n"], { type: "text/plain" });
-      await uploadFileToDrive(accessToken, folder.id, note, "Client links - " + submittedAt.slice(0, 10) + " " + id.slice(0, 6) + ".txt");
+      const note = "Links " + businessName + " sent instead of uploading files (" + submittedAt + ")\n\n" + linkLines.join("\n") + "\n";
+      await env.UPLOADS.put(
+        slug + "/client-links-" + submittedAt.slice(0, 10) + "-" + id.slice(0, 6) + ".txt",
+        note,
+        { httpMetadata: { contentType: "text/plain; charset=UTF-8" } }
+      );
     }
 
     const topServices = formatServices(data.top_3_services);
@@ -89,7 +82,7 @@ export async function handleSubmitAssets(request, env) {
     ).bind(
       id, submittedAt, "ads", "assets",
       businessName, topServices, offerDetails,
-      driveFolderUrl, beforeAfter.length + team.length, videos.length
+      folderUrl, beforeAfter.length + team.length, videos.length
     ).run();
 
     // Best-effort push to Google Sheets — never blocks the actual submission.
@@ -108,8 +101,8 @@ export async function handleSubmitAssets(request, env) {
           business_name: businessName,
           top_3_services: topServices,
           offer_details: offerDetails,
-          before_after_photos: withLinks(driveFolderUrl, photoLinks),
-          videos: withLinks(driveFolderUrl, videoLinks)
+          before_after_photos: withLinks(describeUploads(beforeAfter.length + team.length, "photo", folderUrl), photoLinks),
+          videos: withLinks(describeUploads(videos.length, "video", folderUrl), videoLinks)
         })
       });
       const sheetsBody = await sheetsRes.text();
@@ -120,7 +113,7 @@ export async function handleSubmitAssets(request, env) {
       console.error("Sheets push failed (non-blocking):", sheetsErr);
     }
 
-    return json({ ok: true, id, driveFolderUrl });
+    return json({ ok: true, id, folderUrl });
   } catch (err) {
     console.error("submit-assets error:", err);
     return json({ ok: false, error: String(err && err.message ? err.message : err) }, 500);
@@ -137,10 +130,17 @@ function json(obj, status = 200) {
 
 const text = v => (v == null ? "" : String(v));
 const cleanLink = v => (typeof v === "string" ? v.trim() : "");
+const hasLinks = l => !!(l.beforeAfter || l.team || l.videos);
 
-// The folder link, then any links the client pasted, in one cell.
-function withLinks(folderUrl, links) {
-  return links.length ? (folderUrl ? folderUrl + " · " : "") + "Client links: " + links.join(" | ") : (folderUrl || "");
+// "12 photos uploaded: https://.../admin/files/?prefix=acme%2F"  (or just the link when nothing was uploaded)
+function describeUploads(count, noun, folderUrl) {
+  if (!folderUrl) return "";
+  return count > 0 ? count + " " + noun + (count === 1 ? "" : "s") + " uploaded: " + folderUrl : folderUrl;
+}
+
+// The upload summary, then any links the client pasted, in one cell.
+function withLinks(summary, links) {
+  return links.length ? (summary ? summary + " · " : "") + "Client links: " + links.join(" | ") : (summary || "");
 }
 
 // ["Roofing", "Gutters", "Siding", "Skylights"] -> "Roofing; Gutters; Siding; Skylights (extra)"
