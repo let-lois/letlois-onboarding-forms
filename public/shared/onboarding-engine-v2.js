@@ -560,8 +560,8 @@
           html += '<div class="color-slot">' +
             '<button type="button" class="slot-main" data-slot="' + escapeAttr(s.id) + '" aria-label="' + escapeAttr(s.label) + ' color">' +
               '<span class="slot-swatch"' + (hex ? ' style="background:' + hex + '"' : "") + "></span>" +
-              '<span class="slot-meta"><span class="slot-label">' + escapeHtml(s.label) + (s.required ? "" : ' <span class="slot-opt">optional</span>') + "</span>" +
-              '<span class="slot-hex">' + (hex || "Pick a color") + "</span></span></button>" +
+              '<span class="slot-meta"><span class="slot-label">' + escapeHtml(s.label) + "</span>" +
+              '<span class="slot-hex">' + (hex || (s.required ? "Choose" : "Optional")) + "</span></span></button>" +
             (s.required ? "" : '<button type="button" class="slot-clear" data-clear="' + escapeAttr(s.id) + '" aria-label="Clear ' + escapeAttr(s.label) + '"' + (hex ? "" : " hidden") + ">&times;</button>") +
             "</div>";
         });
@@ -1006,7 +1006,7 @@
           const hex = normHex(val[s.id]) || "";
           main.classList.toggle("active", s.id === active);
           main.querySelector(".slot-swatch").style.background = hex;
-          main.querySelector(".slot-hex").textContent = hex || "Pick a color";
+          main.querySelector(".slot-hex").textContent = hex || (s.required ? "Choose" : "Optional");
           const clr = document.querySelector('[data-clear="' + s.id + '"]');
           if (clr) clr.hidden = !hex;
         });
