@@ -4,6 +4,7 @@ import { handleSubmitAssets } from "./api/submit-assets.js";
 import { handleUpload } from "./api/upload.js";
 import { handleAdminFiles } from "./api/admin-files.js";
 import { handleDriveCopyBatch } from "./api/copy-to-drive.js";
+import { handleLookupServices } from "./api/lookup-services.js";
 
 export default {
   async fetch(request, env, ctx) {
@@ -17,6 +18,9 @@ export default {
     }
     if (url.pathname === "/api/submit-assets" && request.method === "POST") {
       return handleSubmitAssets(request, env);
+    }
+    if (url.pathname === "/api/lookup-services" && request.method === "GET") {
+      return handleLookupServices(request, env, url);
     }
     if (url.pathname.startsWith("/api/upload/")) {
       return handleUpload(request, env, url);
