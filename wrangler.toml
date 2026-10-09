@@ -16,11 +16,22 @@ database_id = "d35e051e-2f19-4c83-ac58-3cc15f9c3092"
 binding = "UPLOADS"
 bucket_name = "letlois-onboarding-uploads"
 
+[[queues.producers]]
+binding = "COPY_QUEUE"
+queue = "letlois-drive-copy"
+
+[[queues.consumers]]
+queue = "letlois-drive-copy"
+max_batch_size = 1
+max_concurrency = 5
+max_retries = 6
+retry_delay = 30
+
 [vars]
 SHEETS_WEBHOOK_URL = "https://script.google.com/macros/s/AKfycbzqJ04XGP-0U_LN_e4fBDK5KIP9EgK7R7tg9XjcS3_asW8qB1cucaohehqAtnk96AFP/exec"
 GOOGLE_DRIVE_PARENT_FOLDER_ID = "0ADsUTq_SmUjEUk9PVA"
 
 # Secrets are set in the Cloudflare dashboard (Worker -> Settings -> Variables
 # and Secrets), never in this file, because this file is committed to GitHub:
-#   GOOGLE_SERVICE_ACCOUNT_KEY_JSON  - Google service account key (Part 2 logo uploads)
+#   GOOGLE_SERVICE_ACCOUNT_KEY_JSON  - Google service account key (Part 2 logo uploads and the Part 3 Drive copies)
 #   ADMIN_PASSWORD                   - password for the private file browser at /admin/files/
