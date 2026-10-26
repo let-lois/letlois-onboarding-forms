@@ -41,7 +41,7 @@
         subtitle: "We're going to gather some basic-level business information so we can store and house this on our end when we go to set up your business texting. About 3 minutes.",
         cta: "Start" },
 
-      { id: "business_name", type: "text", required: true,
+      { id: "business_name", type: "text", required: true, prefillParam: "business",
         question: "What's your business name?",
         placeholder: "Acme",
         context: "Just the everyday name you go by — not the full legal name with LLC/Inc attached. We'll use this to match your answers together across every part of this form." },
@@ -61,7 +61,7 @@
         placeholder: "Marketing Director, Owner, etc.",
         context: "Tracked separately from your name so it routes correctly on our end." },
 
-      { id: "ein", type: "text", required: true,
+      { id: "ein", type: "text", required: true, noSave: true,
         question: "What's your EIN (Employer Identification Number)?",
         placeholder: "12-3456789",
         mask: "XX-XXXXXXX",
