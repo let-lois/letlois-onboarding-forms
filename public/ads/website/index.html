@@ -173,10 +173,18 @@
         subtitle: "A few details about your services, where you work, and how you'd like your website to look. About 5 minutes.",
         cta: "Start" },
 
-      { id: "business_name", type: "text", required: true,
+      { id: "business_name", type: "text", required: true, prefillParam: "business",
         question: "What's your business name?",
         placeholder: "Acme",
         context: "Use the same name you gave us in Part 1. It's how we match your answers together across every part of this form." },
+
+      { id: "existing_website", type: "text", required: true, format: "url", skippable: true,
+        skipLabel: "We don't have a website yet",
+        skippedNote: "No problem. We'll build your site from scratch.",
+        question: "What's the link to your current website?",
+        subtitle: "If you have a site today, paste the link.",
+        placeholder: "https://yourcompany.com",
+        context: "We look at your current site to see what to keep, what to improve, and how it's organized. If you don't have one yet, tap the link below." },
 
       { id: "listed_services", type: "list", required: true, minItems: 3,
         itemDetails: true, detailsLabel: "Add details (optional)",
