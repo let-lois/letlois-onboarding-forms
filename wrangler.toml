@@ -35,3 +35,6 @@ GOOGLE_DRIVE_PARENT_FOLDER_ID = "0ADsUTq_SmUjEUk9PVA"
 # and Secrets), never in this file, because this file is committed to GitHub:
 #   GOOGLE_SERVICE_ACCOUNT_KEY_JSON  - Google service account key (Part 2 logo uploads and the Part 3 Drive copies)
 #   ADMIN_PASSWORD                   - password for the private file browser at /admin/files/
+#   COMMAND_CENTER_TOKEN             - optional: lets LetLois Command Center read the file browser
+#                                      (/admin/api/files, /admin/download). At least 32 characters;
+#                                      the same value goes in Command Center's ONBOARDING_API_TOKEN.

@@ -1,12 +1,18 @@
 /**
  * Private file browser for the LetLois team.
  *
- *   /admin/files/?prefix=<folder>/   lists the client folders, or the files inside one
- *   /admin/download?key=<file key>   opens or downloads one file
+ *   /admin/files/?prefix=<folder>/      lists the client folders, or the files inside one
+ *   /admin/download?key=<file key>      opens or downloads one file
+ *   /admin/api/files?prefix=<folder>/   the same listing as JSON, for LetLois Command Center
  *
  * Protected by a password (env.ADMIN_PASSWORD, a Cloudflare secret). The browser
  * shows a sign-in box; type anything as the username and the password as the
  * password. Without the secret set, these pages stay locked.
+ *
+ * Command Center reads the same pages server to server with its own key
+ * (env.COMMAND_CENTER_TOKEN, a separate secret sent as "Authorization: Bearer").
+ * It is separate from the password so either can be changed without breaking
+ * the other. Without it set, only the password works, exactly as before.
  */
 
 export async function handleAdminFiles(request, env, url) {
@@ -14,11 +20,19 @@ export async function handleAdminFiles(request, env, url) {
   if (denied) return denied;
 
   if (url.pathname === "/admin/download" && request.method === "GET") return download(request, env, url);
+  if (url.pathname === "/admin/api/files" && request.method === "GET") return listingJson(env, url);
   if ((url.pathname === "/admin/files/" || url.pathname === "/admin/files") && request.method === "GET") return listing(env, url);
   return new Response("Not found", { status: 404 });
 }
 
+// Shorter than this is treated as not set, so a placeholder can never open the files.
+const MIN_TOKEN_LENGTH = 32;
+
 function checkPassword(request, env) {
+  const token = env.COMMAND_CENTER_TOKEN || "";
+  const auth = request.headers.get("Authorization") || "";
+  if (token.length >= MIN_TOKEN_LENGTH && auth.startsWith("Bearer ") && sameText(auth.slice(7), token)) return null;
+
   if (!env.ADMIN_PASSWORD) {
     return new Response("File browser is not set up yet (ADMIN_PASSWORD is missing).", { status: 503 });
   }
@@ -84,6 +98,30 @@ async function listing(env, url) {
     "</div></body></html>";
 
   return new Response(html, { headers: { "Content-Type": "text/html; charset=UTF-8", "Cache-Control": "no-store" } });
+}
+
+// The listing above as data: the same folders and files, so Command Center can
+// show them in its own screens. Nothing here that the HTML page doesn't show.
+async function listingJson(env, url) {
+  const prefix = url.searchParams.get("prefix") || "";
+  const cursor = url.searchParams.get("cursor") || undefined;
+  const res = await env.UPLOADS.list({ prefix, delimiter: "/", cursor, limit: 500 });
+
+  const body = {
+    ok: true,
+    prefix,
+    folders: (res.delimitedPrefixes || []).map(p => ({ prefix: p, name: p.slice(prefix.length).replace(/\/$/, "") })),
+    files: (res.objects || []).map(o => ({
+      key: o.key,
+      name: o.key.slice(prefix.length),
+      size: o.size,
+      uploaded: o.uploaded ? new Date(o.uploaded).toISOString() : null
+    })),
+    cursor: res.truncated ? res.cursor : null
+  };
+  return new Response(JSON.stringify(body), {
+    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" }
+  });
 }
 
 async function download(request, env, url) {
