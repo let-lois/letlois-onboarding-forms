@@ -124,6 +124,11 @@ async function listingJson(env, url) {
   });
 }
 
+const SAFE_INLINE = [
+  "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
+  "video/mp4", "video/quicktime", "video/webm", "text/plain"
+];
+
 async function download(request, env, url) {
   const key = url.searchParams.get("key") || "";
   if (!key) return new Response("Missing file", { status: 400 });
@@ -131,12 +136,19 @@ async function download(request, env, url) {
   const obj = await env.UPLOADS.get(key, { range: request.headers });
   if (!obj) return new Response("File not found", { status: 404 });
 
+  // Only types that cannot run a script open in the tab. The upload form accepts
+  // any image/*, so an SVG gets in, and an SVG opened here could use the team's
+  // saved password to read every client's files. Anything else is saved instead.
+  const type = (obj.httpMetadata && obj.httpMetadata.contentType) || "";
+  const inline = !url.searchParams.get("dl") && SAFE_INLINE.includes(type.split(";")[0].trim().toLowerCase());
+
   const headers = new Headers();
-  headers.set("Content-Type", (obj.httpMetadata && obj.httpMetadata.contentType) || "application/octet-stream");
+  headers.set("Content-Type", inline ? type : "application/octet-stream");
+  headers.set("X-Content-Type-Options", "nosniff");
   headers.set("Accept-Ranges", "bytes");
   headers.set("Cache-Control", "private, no-store");
   const name = key.split("/").pop().replace(/^[a-z0-9]{8}-/, "");
-  headers.set("Content-Disposition", (url.searchParams.get("dl") ? "attachment" : "inline") + "; filename*=UTF-8''" + encodeURIComponent(name));
+  headers.set("Content-Disposition", (inline ? "inline" : "attachment") + "; filename*=UTF-8''" + encodeURIComponent(name));
 
   let status = 200;
   if (obj.range && request.headers.get("Range")) {
