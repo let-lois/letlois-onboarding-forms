@@ -43,6 +43,7 @@ export async function handleSubmitWebsite(request, env) {
     }
 
     const out = {
+      existing_website: formatSite(data.existing_website),
       listed_services: formatServices(data.listed_services, data.listed_services_details),
       service_areas: data.service_area ? formatArea(data.service_area) : text(data.service_areas),
       color_scheme: data.brand_colors ? formatColors(data.brand_colors) : text(data.color_scheme),
@@ -55,23 +56,48 @@ export async function handleSubmitWebsite(request, env) {
     const id = crypto.randomUUID();
     const submittedAt = new Date().toISOString();
 
-    await env.DB.prepare(
-      `INSERT INTO website_submissions (
-        id, submitted_at, plan, part,
-        business_name, listed_services, service_areas, color_scheme,
-        design_notes, pricing_details, wants_service_area_map, logo_link
-      ) VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?)`
-    ).bind(
-      id, submittedAt, "ads", "website",
-      businessName,
-      out.listed_services,
-      out.service_areas,
-      out.color_scheme,
-      out.design_notes,
-      out.pricing_details,
-      out.wants_service_area_map,
-      out.logo
-    ).run();
+    try {
+      await env.DB.prepare(
+        `INSERT INTO website_submissions (
+          id, submitted_at, plan, part,
+          business_name, existing_website, listed_services, service_areas, color_scheme,
+          design_notes, pricing_details, wants_service_area_map, logo_link
+        ) VALUES (?,?,?,?, ?,?,?,?,?, ?,?,?,?)`
+      ).bind(
+        id, submittedAt, "ads", "website",
+        businessName,
+        out.existing_website,
+        out.listed_services,
+        out.service_areas,
+        out.color_scheme,
+        out.design_notes,
+        out.pricing_details,
+        out.wants_service_area_map,
+        out.logo
+      ).run();
+    } catch (dbErr) {
+      // Safety net: if schema/0004_website_existing_site.sql hasn't been run in D1 yet,
+      // save without the new column so the client's submission still goes through.
+      if (!/existing_website/i.test(String(dbErr && dbErr.message))) throw dbErr;
+      console.error("website_submissions has no existing_website column yet; run schema/0004. Saving without it.");
+      await env.DB.prepare(
+        `INSERT INTO website_submissions (
+          id, submitted_at, plan, part,
+          business_name, listed_services, service_areas, color_scheme,
+          design_notes, pricing_details, wants_service_area_map, logo_link
+        ) VALUES (?,?,?,?, ?,?,?,?, ?,?,?,?)`
+      ).bind(
+        id, submittedAt, "ads", "website",
+        businessName,
+        out.listed_services,
+        out.service_areas,
+        out.color_scheme,
+        out.design_notes,
+        out.pricing_details,
+        out.wants_service_area_map,
+        out.logo
+      ).run();
+    }
 
     // Best-effort push to Google Sheets — never blocks the actual submission.
     // Matched to the client's existing row by business name.
@@ -82,13 +108,15 @@ export async function handleSubmitWebsite(request, env) {
         body: JSON.stringify({
           part: "website",
           business_name: businessName,
+          existing_website: out.existing_website,
           listed_services: out.listed_services,
           service_areas: out.service_areas,
           color_scheme: out.color_scheme,
           design_notes: out.design_notes,
           pricing_details: out.pricing_details,
           wants_service_area_map: out.wants_service_area_map,
-          logo: out.logo
+          logo: out.logo,
+          submitted_at: submittedAt
         })
       });
       const sheetsBody = await sheetsRes.text();
@@ -115,6 +143,12 @@ function json(obj, status = 200) {
    ========================================================================== */
 
 const text = v => (v == null ? "" : String(v));
+
+// The client's current website link, or a note when they said they don't have one.
+function formatSite(v) {
+  if (v && typeof v === "object" && v.skipped) return "No website yet";
+  return text(v).trim();
+}
 
 // "199" -> "$199", "1299" -> "$1,299", "1,200.50" -> "$1,200.50". Anything
 // else is left as typed ("Call for a quote", "$99/mo").
