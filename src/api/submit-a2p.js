@@ -68,7 +68,8 @@ export async function handleSubmitA2P(request, env) {
           biz_type: data.legal_biz_entity_type,
           mobile: data.mobile_cell_phone,
           crm: software,
-          additional_team: teamMembers
+          additional_team: teamMembers,
+          submitted_at: submittedAt
         })
       });
       const sheetsBody = await sheetsRes.text();
