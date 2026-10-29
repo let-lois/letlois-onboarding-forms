@@ -138,7 +138,8 @@ export async function handleSubmitAssets(request, env) {
           top_3_services: topServices,
           offer_details: offerDetails,
           before_after_photos: withLinks(describeUploads(beforeAfter.length + team.length, "photo", driveFolderUrl, r2Url), photoLinks),
-          videos: withLinks(describeUploads(videos.length, "video", driveFolderUrl, r2Url), videoLinks)
+          videos: withLinks(describeUploads(videos.length, "video", driveFolderUrl, r2Url), videoLinks),
+          submitted_at: submittedAt
         })
       });
       const sheetsBody = await sheetsRes.text();
