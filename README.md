@@ -101,6 +101,24 @@ To test the real submit flow locally (Function + D1 together):
 wrangler pages dev public --d1 DB=letlois-onboarding
 ```
 
+## Reading client files from Command Center
+
+The private file browser at `/admin/files/` is also shown inside LetLois Command
+Center (Onboarding → Client files), so the team can work from one app. Command
+Center reads it over HTTPS — the two Workers are on different Cloudflare
+accounts, so it cannot bind this bucket directly — using these routes:
+
+- `GET /admin/api/files?prefix=<folder>/` — the same listing as `/admin/files/`, as JSON
+- `GET /admin/download?key=<file key>` — unchanged
+- `GET /admin/api/submissions` — one row per business (by the same slug its files use), with when each part arrived
+- `GET /admin/api/submissions/detail?business=<slug>` — every answer that business sent, newest first. The EIN is masked unless `reveal=ein` is passed.
+
+All of them accept the existing `ADMIN_PASSWORD`, or a separate secret,
+`COMMAND_CENTER_TOKEN` (32+ characters), sent as `Authorization: Bearer`. Set it
+with `wrangler secret put COMMAND_CENTER_TOKEN` and put the same value in Command
+Center's `ONBOARDING_API_TOKEN`. Until it is set, nothing changes here: the
+password is the only way in, and `/admin/files/` works exactly as before.
+
 ## Open items
 
 - **Theme**: currently the placeholder ink/parchment/brass/stamp system from
