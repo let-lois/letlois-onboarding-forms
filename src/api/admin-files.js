@@ -4,6 +4,7 @@
  *   /admin/files/?prefix=<folder>/      lists the client folders, or the files inside one
  *   /admin/download?key=<file key>      opens or downloads one file
  *   /admin/api/files?prefix=<folder>/   the same listing as JSON, for LetLois Command Center
+ *   /admin/api/submissions[/detail]     the answers clients sent, as JSON (src/api/admin-submissions.js)
  *
  * Protected by a password (env.ADMIN_PASSWORD, a Cloudflare secret). The browser
  * shows a sign-in box; type anything as the username and the password as the
@@ -15,12 +16,15 @@
  * the other. Without it set, only the password works, exactly as before.
  */
 
+import { handleAdminSubmissions } from "./admin-submissions.js";
+
 export async function handleAdminFiles(request, env, url) {
   const denied = checkPassword(request, env);
   if (denied) return denied;
 
   if (url.pathname === "/admin/download" && request.method === "GET") return download(request, env, url);
   if (url.pathname === "/admin/api/files" && request.method === "GET") return listingJson(env, url);
+  if (url.pathname.startsWith("/admin/api/submissions") && request.method === "GET") return handleAdminSubmissions(request, env, url);
   if ((url.pathname === "/admin/files/" || url.pathname === "/admin/files") && request.method === "GET") return listing(env, url);
   return new Response("Not found", { status: 404 });
 }
